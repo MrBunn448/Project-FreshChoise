@@ -20,7 +20,7 @@ type Allergeen = {
 // Hardcoded API URL
 const API_URL = "http://localhost:3001";
 
-type View = "home" | "login" | "register" | "account";
+type View = "home" | "products" | "login" | "register" | "account";
 
 export default function App() {
   const [view, setView] = useState<View>("home");
@@ -128,7 +128,7 @@ export default function App() {
         variant={navVariant}
         onGoHome={() => setView("home")}
         onGoAbout={() => setView("home")}
-        onGoProducts={() => setView("home")}
+        onGoProducts={() => setView("products")}
         onGoAccount={() => setView("account")}
         onGoLogin={() => setView("login")}
         onGoRegister={() => {
@@ -140,6 +140,9 @@ export default function App() {
 
       {/* CONTENT */}
       {view === "home" && <HomePage isLoggedIn={!!currentUser} />}
+
+      {view === "products" && <ProductsPage />}
+
       {view === "login" && (
         <LoginPage
           onSubmit={handleLogin}
@@ -149,6 +152,7 @@ export default function App() {
           }}
         />
       )}
+
       {view === "register" && (
         <RegisterPage
           onSubmit={handleRegister}
@@ -159,6 +163,7 @@ export default function App() {
           onGoLogin={() => setView("login")}
         />
       )}
+
       {view === "account" && (
         <AccountPage
           user={currentUser}
@@ -350,6 +355,135 @@ function FeatureCard(props: { icon: string; title: string; desc: string }) {
       </div>
       <h3 className="mt-4 font-semibold text-gray-700">{title}</h3>
       <p className="mt-2 text-sm text-gray-500">{desc}</p>
+    </div>
+  );
+}
+
+/* -----------------------------
+ PRODUCTS PAGE 
+----------------------------- */  
+type Product = {
+  id: number;
+  naam: string;
+  prijs: number;
+  categorie: string;
+  imageUrl?: string; // later echte image
+};
+
+function ProductsPage() {
+  const [query, setQuery] = useState("");
+
+  // Dummy data (later vervangen door API call)
+  const products: Product[] = [
+  {
+    id: 1,
+    naam: "Brood",
+    prijs: 2.75,
+    categorie: "Bakkerij",
+  },
+  {
+    id: 2,
+    naam: "Kaas",
+    prijs: 3.50,
+    categorie: "Zuivel",
+  },
+  {
+    id: 3,
+    naam: "Noten",
+    prijs: 4.25,
+    categorie: "Snack",
+  },
+];
+
+  const filtered = products.filter((p) => {
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      p.naam.toLowerCase().includes(q) ||
+      p.categorie.toLowerCase().includes(q)
+    );
+  });
+
+  return (
+    <main className="mx-auto max-w-6xl px-4">
+      {/* Header row: title left + search right */}
+      <section className="mt-10">
+        <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h1 className="text-5xl font-semibold text-gray-800">Products</h1>
+          </div>
+
+          <div className="w-full md:w-96">
+            <label className="block text-sm text-gray-600 mb-2">Search</label>
+            <div className="flex items-center gap-2 bg-white border rounded-md px-3 py-2 shadow-sm">
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Enter search terms"
+                className="w-full outline-none text-sm"
+              />
+              <span className="text-gray-400">🔍</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Grid */}
+      <section className="mt-12 pb-12">
+        {filtered.length === 0 ? (
+          <div className="mt-10 text-gray-500">
+            Geen producten gevonden voor “{query}”.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-10">
+            {filtered.map((p) => (
+              <ProductCard key={p.id} product={p} />
+            ))}
+          </div>
+        )}
+      </section>
+    </main>
+  );
+}
+
+function ProductCard({ product }: { product: Product }) {
+  return (
+    <div className="group">
+      {/* Image placeholder */}
+      <div className="border rounded-md bg-gray-100 overflow-hidden">
+        <div className="aspect-square flex items-center justify-center text-gray-400">
+          {/* Later makkelijk vervangen door img */}
+          {/* <img src={product.imageUrl} alt={product.naam} className="w-full h-full object-cover" /> */}
+          IMAGE
+        </div>
+      </div>
+
+      {/* Info */}
+      <div className="mt-4 flex items-start justify-between gap-3">
+        <div>
+          <h3 className="font-semibold text-gray-800 group-hover:underline">
+            {product.naam}
+          </h3>
+          <p className="text-sm text-gray-500">{product.categorie}</p>
+        </div>
+
+        <div className="text-sm font-semibold text-gray-700">
+          € {product.prijs.toFixed(2)}
+        </div>
+      </div>
+
+      {/* Button row (UI-only) */}
+      <div className="mt-4 flex gap-3">
+        <button className="px-4 py-2 rounded-full border text-sm text-gray-700 hover:bg-gray-50">
+          View
+        </button>
+        <button
+          className="px-4 py-2 rounded-full bg-gray-200 text-sm text-gray-700 hover:bg-gray-300"
+          title="(later koppelen aan mandje)"
+        >
+          Add
+        </button>
+      </div>
     </div>
   );
 }
