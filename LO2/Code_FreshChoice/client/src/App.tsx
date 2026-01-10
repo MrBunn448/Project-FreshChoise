@@ -574,6 +574,8 @@ function AccountPage(props: {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<Profile | null>(null);
 
+  const [naam, setNaam] = useState("");
+  const [email, setEmail] = useState("");
   const [adres, setAdres] = useState("");
   const [telefoon, setTelefoon] = useState("");
   const [saving, setSaving] = useState(false);
@@ -590,6 +592,8 @@ function AccountPage(props: {
         // 2) haal profiel op
         const profRes = await axios.get(`${API_URL}/api/profile`);
         setProfile(profRes.data);
+        setNaam(profRes.data.naam ?? "");
+        setEmail(profRes.data.email ?? "");
         setAdres(profRes.data.adres ?? "");
         setTelefoon(profRes.data.telefoonnummer ?? "");
       } catch (err) {
@@ -607,6 +611,8 @@ function AccountPage(props: {
     setSaving(true);
     try {
       await axios.put(`${API_URL}/api/profile`, {
+        naam,
+        email,
         adres,
         telefoonnummer: telefoon,
       });
@@ -664,8 +670,8 @@ function AccountPage(props: {
                   <label className="block text-sm text-gray-600 mb-2">User name</label>
                   <input
                     className="w-full border rounded-md px-3 py-2 outline-none bg-white"
-                    value={profile.naam}
-                    readOnly
+                    value={naam}
+                    onChange={(e) => setNaam(e.target.value)}
                   />
                 </div>
 
@@ -674,8 +680,8 @@ function AccountPage(props: {
                     <label className="block text-sm text-gray-600 mb-2">Email</label>
                     <input
                       className="w-full border rounded-md px-3 py-2 outline-none bg-white"
-                      value={profile.email}
-                      readOnly
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
                     />
                   </div>
 

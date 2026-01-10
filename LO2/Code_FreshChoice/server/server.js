@@ -241,31 +241,70 @@ app.get('/api/profile', requireAuth, (req, res) => {
 });
 
 // -----------------------------
-// PROFIEL OPSLAAN (adres/telefoon) via session
+// PROFIEL OPSLAAN (naam/e-mail/adres/telefoon) via session
 // -----------------------------
-app.put('/api/profile', requireAuth, (req, res) => {
+app.put('/api/profile', requireAuth, async (req, res) => {
   const userId = req.session.userId;
 
-  let { adres, telefoonnummer } = req.body;
+  let { naam, email, adres, telefoonnummer } = req.body;
+
+  naam = naam ? String(naam).trim() : null;
+  email = email ? String(email).trim().toLowerCase() : null;
   adres = adres ? String(adres).trim() : null;
   telefoonnummer = telefoonnummer ? String(telefoonnummer).trim() : null;
 
-  // Upsert (werkt als klantinformatie.klant_id UNIQUE is)
-  const q = `
-    INSERT INTO klantinformatie (klant_id, adres, telefoonnummer)
-    VALUES (?, ?, ?)
-    ON DUPLICATE KEY UPDATE
-      adres = VALUES(adres),
-      telefoonnummer = VALUES(telefoonnummer)
-  `;
+  if (!naam || !email) {
+    return res.status(400).json({ error: "Naam en email zijn verplicht." });
+  }
 
-  db.query(q, [userId, adres, telefoonnummer], (err) => {
-    if (err) {
-      console.error("DB error saving profile:", err);
-      return res.status(500).json({ error: "Database fout bij opslaan profiel." });
+  let conn;
+  try {
+    conn = await db.promise().getConnection();
+    await conn.beginTransaction();
+
+    // ✅ Check of email al bestaat bij een andere klant
+    const [emailRows] = await conn.query(
+      "SELECT id FROM klant WHERE email = ? AND id <> ? LIMIT 1",
+      [email, userId]
+    );
+    if (emailRows.length > 0) {
+      await conn.rollback();
+      conn.release();
+      return res.status(400).json({ error: "E-mail bestaat al." });
     }
-    res.json({ message: "Profiel opgeslagen." });
-  });
+
+    // ✅ Update klant
+    await conn.query(
+      "UPDATE klant SET naam = ?, email = ? WHERE id = ?",
+      [naam, email, userId]
+    );
+
+    // ✅ Upsert klantinformatie
+    await conn.query(
+      `
+      INSERT INTO klantinformatie (klant_id, adres, telefoonnummer)
+      VALUES (?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        adres = VALUES(adres),
+        telefoonnummer = VALUES(telefoonnummer)
+      `,
+      [userId, adres, telefoonnummer]
+    );
+
+    await conn.commit();
+    conn.release();
+
+    return res.json({ message: "Profiel opgeslagen.", naam, email });
+  } catch (err) {
+    console.error("DB error saving profile:", err);
+    try {
+      if (conn) {
+        await conn.rollback();
+        conn.release();
+      }
+    } catch {}
+    return res.status(500).json({ error: "Database fout bij opslaan profiel." });
+  }
 });
 
 // -----------------------------
