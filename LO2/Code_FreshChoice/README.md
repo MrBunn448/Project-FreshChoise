@@ -31,7 +31,8 @@ npm install bcrypt
 
 # 3. Install express-sessions dependancies
 cd server
-npm i express-session connect-mysql2
+npm i express-session connect-mysql2 
+#let op! Toen ik het heb installed bleek ik het al te hebben en clashten ze me elkaar, dus voordat je dit installed, probeer het eerst zonder dit te runnen.
 
 # 4. Install Client dependencies
 cd ../client

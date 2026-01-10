@@ -31,6 +31,18 @@ export default function App() {
   const [selectedAllergenen, setSelectedAllergenen] = useState<number[]>([]);
   const [loadingAllergenen, setLoadingAllergenen] = useState(false);
 
+  // Check of er een ingelogde user is bij mount
+  useEffect(() => {
+    axios
+      .get(`${API_URL}/api/me`)
+      .then((res) => {
+        setCurrentUser(res.data);
+      })
+      .catch(() => {
+        setCurrentUser(null);
+      });
+  }, []);
+
   // Ophalen allergenen zodra register open is
   useEffect(() => {
     if (view !== "register") return;
