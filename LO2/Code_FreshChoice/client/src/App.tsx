@@ -4,13 +4,11 @@ import logo from "./assets/FreshChoiceLogo.png";
 
 axios.defaults.withCredentials = true;
 
-
 type User = {
   id: number;
   naam: string;
   email: string;
 };
-
 
 type Allergeen = {
   id: number;
@@ -117,9 +115,15 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
-    setCurrentUser(null);
-    setView("home");
+  const handleLogout = async () => {
+    try {
+      await axios.post(`${API_URL}/api/logout`);
+    } catch {
+      // ignore
+    } finally {
+      setCurrentUser(null);
+      setView("home");
+    }
   };
 
   return (
@@ -208,21 +212,25 @@ function Navbar(props: {
         <div className="h-16 flex items-center justify-between">
           {/* Left nav */}
           <nav className="flex items-center gap-6 text-sm text-gray-500">
-            <button onClick={onGoHome} className="hover:text-gray-900">Home</button>
-            <button onClick={onGoAbout} className="hover:text-gray-900">About Us</button>
-            <button onClick={onGoProducts} className="hover:text-gray-900">Products</button>
+            <button onClick={onGoHome} className="hover:text-gray-900">
+              Home
+            </button>
+            <button onClick={onGoAbout} className="hover:text-gray-900">
+              About Us
+            </button>
+            <button onClick={onGoProducts} className="hover:text-gray-900">
+              Products
+            </button>
             {variant === "loggedIn" && (
-              <button onClick={onGoAccount} className="hover:text-gray-900">Account</button>
+              <button onClick={onGoAccount} className="hover:text-gray-900">
+                Account
+              </button>
             )}
           </nav>
 
           {/* Center logo */}
           <div className="flex items-center justify-center">
-            <img
-              src={logo}
-              alt="Fresh Choice logo"
-              className="h-9 w-auto object-contain"
-            />
+            <img src={logo} alt="Fresh Choice logo" className="h-9 w-auto object-contain" />
           </div>
 
           {/* Right actions */}
@@ -289,10 +297,7 @@ function HomePage(props: { isLoggedIn: boolean }) {
           <div className="absolute top-6 right-6 w-80">
             <label className="block text-xs text-gray-500 mb-1">Search</label>
             <div className="flex items-center gap-2 bg-white border rounded-md px-3 py-2 shadow-sm">
-              <input
-                placeholder="Enter search terms"
-                className="w-full outline-none text-sm"
-              />
+              <input placeholder="Enter search terms" className="w-full outline-none text-sm" />
               <span className="text-gray-400">🔍</span>
             </div>
           </div>
@@ -309,29 +314,15 @@ function HomePage(props: { isLoggedIn: boolean }) {
       {/* MID SECTION */}
       <section className="mt-12 text-center">
         <h2 className="text-3xl font-semibold text-gray-700">Welkom!</h2>
-        <p className="mt-3 text-gray-500 max-w-2xl mx-auto">
-          Tekstje om de gebruiker te verwelkomen
-        </p>
+        <p className="mt-3 text-gray-500 max-w-2xl mx-auto">Tekstje om de gebruiker te verwelkomen</p>
       </section>
 
       {/* FEATURES */}
       <section className="mt-10">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
-          <FeatureCard
-            icon="📍"
-            title="Choose products"
-            desc="Tekstje over het kiezen van producten."
-          />
-          <FeatureCard
-            icon="🗓️"
-            title="Add them in your basket"
-            desc="Tekstje over het toevoegen van producten aan je mandje."
-          />
-          <FeatureCard
-            icon="🚗"
-            title="Easy to find, easy to collect"
-            desc="Tekstje over het binnenkrijgen van je bestelling."
-          />
+          <FeatureCard icon="📍" title="Choose products" desc="Tekstje over het kiezen van producten." />
+          <FeatureCard icon="🗓️" title="Add them in your basket" desc="Tekstje over het toevoegen van producten aan je mandje." />
+          <FeatureCard icon="🚗" title="Easy to find, easy to collect" desc="Tekstje over het binnenkrijgen van je bestelling." />
         </div>
       </section>
 
@@ -360,8 +351,8 @@ function FeatureCard(props: { icon: string; title: string; desc: string }) {
 }
 
 /* -----------------------------
- PRODUCTS PAGE 
------------------------------ */  
+ PRODUCTS PAGE
+----------------------------- */
 type Product = {
   id: number;
   naam: string;
@@ -375,33 +366,15 @@ function ProductsPage() {
 
   // Dummy data (later vervangen door API call)
   const products: Product[] = [
-  {
-    id: 1,
-    naam: "Brood",
-    prijs: 2.75,
-    categorie: "Bakkerij",
-  },
-  {
-    id: 2,
-    naam: "Kaas",
-    prijs: 3.50,
-    categorie: "Zuivel",
-  },
-  {
-    id: 3,
-    naam: "Noten",
-    prijs: 4.25,
-    categorie: "Snack",
-  },
-];
+    { id: 1, naam: "Brood", prijs: 2.75, categorie: "Bakkerij" },
+    { id: 2, naam: "Kaas", prijs: 3.5, categorie: "Zuivel" },
+    { id: 3, naam: "Noten", prijs: 4.25, categorie: "Snack" },
+  ];
 
   const filtered = products.filter((p) => {
     const q = query.trim().toLowerCase();
     if (!q) return true;
-    return (
-      p.naam.toLowerCase().includes(q) ||
-      p.categorie.toLowerCase().includes(q)
-    );
+    return p.naam.toLowerCase().includes(q) || p.categorie.toLowerCase().includes(q);
   });
 
   return (
@@ -431,9 +404,7 @@ function ProductsPage() {
       {/* Grid */}
       <section className="mt-12 pb-12">
         {filtered.length === 0 ? (
-          <div className="mt-10 text-gray-500">
-            Geen producten gevonden voor “{query}”.
-          </div>
+          <div className="mt-10 text-gray-500">Geen producten gevonden voor “{query}”.</div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-10">
             {filtered.map((p) => (
@@ -461,22 +432,16 @@ function ProductCard({ product }: { product: Product }) {
       {/* Info */}
       <div className="mt-4 flex items-start justify-between gap-3">
         <div>
-          <h3 className="font-semibold text-gray-800 group-hover:underline">
-            {product.naam}
-          </h3>
+          <h3 className="font-semibold text-gray-800 group-hover:underline">{product.naam}</h3>
           <p className="text-sm text-gray-500">{product.categorie}</p>
         </div>
 
-        <div className="text-sm font-semibold text-gray-700">
-          € {product.prijs.toFixed(2)}
-        </div>
+        <div className="text-sm font-semibold text-gray-700">€ {product.prijs.toFixed(2)}</div>
       </div>
 
       {/* Button row (UI-only) */}
       <div className="mt-4 flex gap-3">
-        <button className="px-4 py-2 rounded-full border text-sm text-gray-700 hover:bg-gray-50">
-          View
-        </button>
+        <button className="px-4 py-2 rounded-full border text-sm text-gray-700 hover:bg-gray-50">View</button>
         <button
           className="px-4 py-2 rounded-full bg-gray-200 text-sm text-gray-700 hover:bg-gray-300"
           title="(later koppelen aan mandje)"
@@ -492,10 +457,7 @@ function ProductCard({ product }: { product: Product }) {
    LOGIN PAGE (wireframe-achtig)
 ----------------------------- */
 
-function LoginPage(props: {
-  onSubmit: (e: React.FormEvent) => void;
-  onGoRegister: () => void;
-}) {
+function LoginPage(props: { onSubmit: (e: React.FormEvent) => void; onGoRegister: () => void }) {
   const { onSubmit, onGoRegister } = props;
 
   return (
@@ -530,8 +492,7 @@ function LoginPage(props: {
             </div>
 
             <button className="inline-flex items-center gap-2 px-6 py-2 rounded-full bg-gray-200 text-gray-700 text-sm">
-              Login
-              <span className="text-gray-400">+</span>
+              Login <span className="text-gray-400">+</span>
             </button>
 
             <div className="text-sm text-gray-500">
@@ -545,7 +506,6 @@ function LoginPage(props: {
 
         {/* Right image placeholder */}
         <div className="border rounded-md bg-gray-100 flex items-center justify-center text-gray-400 min-h-[520px]">
-          {/* Later: <img className="w-full h-full object-cover" src="..." alt="Login visual" /> */}
           IMAGE PLACEHOLDER
         </div>
       </div>
@@ -666,8 +626,7 @@ function RegisterPage(props: {
             </div>
 
             <button className="inline-flex items-center gap-2 px-6 py-2 rounded-full bg-gray-200 text-gray-700 text-sm">
-              Register
-              <span className="text-gray-400">+</span>
+              Register <span className="text-gray-400">+</span>
             </button>
 
             <div className="text-sm text-gray-500">
@@ -681,7 +640,6 @@ function RegisterPage(props: {
 
         {/* Right image placeholder */}
         <div className="border rounded-md bg-gray-100 flex items-center justify-center text-gray-400 min-h-[520px]">
-          {/* Later: <img className="w-full h-full object-cover" src="..." alt="Register visual" /> */}
           IMAGE PLACEHOLDER
         </div>
       </div>
@@ -699,7 +657,7 @@ function Field(props: { label: string; children: React.ReactNode }) {
 }
 
 /* -----------------------------
-   ACCOUNT PAGE (Settings layout)
+   ACCOUNT PAGE (Settings layout + allergenen aanpassen)
 ----------------------------- */
 
 type Profile = {
@@ -713,7 +671,7 @@ type Profile = {
 function AccountPage(props: {
   user: User | null;
   onRequireLogin: () => void;
-  onUserLoaded?: (u: User) => void; // optioneel: App kan currentUser herstellen
+  onUserLoaded?: (u: User) => void;
 }) {
   const { user, onRequireLogin, onUserLoaded } = props;
 
@@ -726,26 +684,49 @@ function AccountPage(props: {
   const [telefoon, setTelefoon] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // ✅ Allergenen in account
+  const [allergenen, setAllergenen] = useState<Allergeen[]>([]);
+  const [selectedMyAllergenen, setSelectedMyAllergenen] = useState<number[]>([]);
+  const [loadingAllergenen, setLoadingAllergenen] = useState(false);
+  const [savingAllergenen, setSavingAllergenen] = useState(false);
+
+  const toggleMyAllergeen = (id: number) => {
+    setSelectedMyAllergenen((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
   useEffect(() => {
     const init = async () => {
       try {
-        // 1) zorg dat we een ingelogde user hebben (sessie)
+        // 1) check sessie
         if (!user) {
           const meRes = await axios.get(`${API_URL}/api/me`);
           onUserLoaded?.(meRes.data);
         }
 
-        // 2) haal profiel op
+        // 2) profiel
         const profRes = await axios.get(`${API_URL}/api/profile`);
         setProfile(profRes.data);
         setNaam(profRes.data.naam ?? "");
         setEmail(profRes.data.email ?? "");
         setAdres(profRes.data.adres ?? "");
         setTelefoon(profRes.data.telefoonnummer ?? "");
+
+        // 3) allergenen master + mijn selectie
+        setLoadingAllergenen(true);
+        const [allRes, myRes] = await Promise.all([
+          axios.get(`${API_URL}/api/allergenen`),
+          axios.get(`${API_URL}/api/my-allergenen`).catch(() => ({ data: [] })),
+        ]);
+        setAllergenen(allRes.data || []);
+        setSelectedMyAllergenen(Array.isArray(myRes.data) ? myRes.data : []);
       } catch (err) {
+        console.log("ACCOUNT PAGE ERROR:", err);
         onRequireLogin();
       } finally {
         setLoading(false);
+        setLoadingAllergenen(false);
       }
     };
 
@@ -762,11 +743,39 @@ function AccountPage(props: {
         adres,
         telefoonnummer: telefoon,
       });
-      alert("Opgeslagen!");
+
+      // (handig) profile state syncen
+      setProfile((p) =>
+        p
+          ? {
+              ...p,
+              naam,
+              email,
+              adres: adres || null,
+              telefoonnummer: telefoon || null,
+            }
+          : p
+      );
+
+      alert("Profiel opgeslagen!");
     } catch (err: any) {
       alert(err?.response?.data?.error ?? "Opslaan mislukt.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const saveMyAllergenen = async () => {
+    setSavingAllergenen(true);
+    try {
+      await axios.put(`${API_URL}/api/my-allergenen`, {
+        allergenen: selectedMyAllergenen,
+      });
+      alert("Allergenen opgeslagen!");
+    } catch (err: any) {
+      alert(err?.response?.data?.error ?? "Allergenen opslaan mislukt.");
+    } finally {
+      setSavingAllergenen(false);
     }
   };
 
@@ -811,6 +820,7 @@ function AccountPage(props: {
                 </div>
               </div>
 
+              {/* Profiel velden */}
               <div className="mt-8 border-t border-gray-300 pt-6">
                 <div className="max-w-2xl">
                   <label className="block text-sm text-gray-600 mb-2">User name</label>
@@ -852,13 +862,57 @@ function AccountPage(props: {
                   />
                 </div>
 
-                <div className="mt-10 flex justify-end">
+                <div className="mt-8 flex justify-end">
                   <button
                     onClick={saveProfile}
                     disabled={saving}
                     className="px-6 py-2 rounded-full bg-gray-200 text-gray-700 text-sm disabled:opacity-60"
                   >
-                    {saving ? "Opslaan..." : "Save"}
+                    {saving ? "Opslaan..." : "Save profile"}
+                  </button>
+                </div>
+              </div>
+
+              {/* ✅ Allergenen blok in Account */}
+              <div className="mt-10 border-t border-gray-300 pt-6">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="text-xl font-semibold text-gray-800">Allergenen</h3>
+                    <p className="text-sm text-gray-500 mt-1">
+                      Vink aan waar je allergisch voor bent. Laat leeg als je geen allergieën hebt.
+                    </p>
+                  </div>
+                  <span className="text-xs text-gray-400">optional</span>
+                </div>
+
+                <div className="mt-4">
+                  {loadingAllergenen ? (
+                    <p className="text-sm text-gray-500">Allergenen laden...</p>
+                  ) : allergenen.length === 0 ? (
+                    <p className="text-sm text-gray-500">Geen allergenen beschikbaar.</p>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-auto pr-1 bg-white border rounded-md p-4">
+                      {allergenen.map((a) => (
+                        <label key={a.id} className="flex items-center gap-2 text-sm text-gray-700">
+                          <input
+                            type="checkbox"
+                            checked={selectedMyAllergenen.includes(a.id)}
+                            onChange={() => toggleMyAllergeen(a.id)}
+                          />
+                          <span>{a.naam}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-6 flex justify-end">
+                  <button
+                    onClick={saveMyAllergenen}
+                    disabled={savingAllergenen || loadingAllergenen}
+                    className="px-6 py-2 rounded-full bg-gray-200 text-gray-700 text-sm disabled:opacity-60"
+                  >
+                    {savingAllergenen ? "Opslaan..." : "Save allergenen"}
                   </button>
                 </div>
               </div>
@@ -878,17 +932,15 @@ function Footer(props: { onGoHome: () => void }) {
       <div className="mx-auto max-w-6xl px-4 py-10">
         <div className="flex flex-col md:flex-row items-center justify-between gap-6 text-sm text-gray-500">
           <div className="flex items-center gap-6">
-            <button onClick={onGoHome} className="hover:text-gray-900">Home</button>
+            <button onClick={onGoHome} className="hover:text-gray-900">
+              Home
+            </button>
             <button className="hover:text-gray-900">About Us</button>
             <button className="hover:text-gray-900">Contact</button>
           </div>
 
           <div className="flex items-center justify-center">
-            <img
-              src={logo}
-              alt="Fresh Choice logo"
-              className="h-8 w-auto object-contain"
-            />
+            <img src={logo} alt="Fresh Choice logo" className="h-8 w-auto object-contain" />
           </div>
 
           <div className="flex items-center gap-6">

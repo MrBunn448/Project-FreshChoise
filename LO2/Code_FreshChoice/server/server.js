@@ -1,11 +1,10 @@
-const express = require('express');
-const mysql = require('mysql2');
-const cors = require('cors');
-const bcrypt = require('bcrypt');
+const express = require("express");
+const mysql = require("mysql2");
+const cors = require("cors");
+const bcrypt = require("bcrypt");
 
-const session = require('express-session');
+const session = require("express-session");
 const MySQLSessionStore = require("express-mysql-session")(session);
-//const MySQLStore = require('connect-mysql2')(session);
 
 const SALT_ROUNDS = 10;
 
@@ -13,22 +12,24 @@ const app = express();
 app.use(express.json());
 
 // ✅ CORS moet credentials toestaan voor cookies
-app.use(cors({
-  origin: "http://localhost:5173",   // Vite
-  credentials: true
-}));
+app.use(
+  cors({
+    origin: "http://localhost:5173", // Vite
+    credentials: true,
+  })
+);
 
 // -----------------------------
-// MySQL CONNECTIE
+// MySQL CONNECTIE (POOL)
 // -----------------------------
 const db = mysql.createPool({
-  host: 'localhost',
-  user: 'root',
-  password: '',
-  database: 'fresh_choice',
+  host: "localhost",
+  user: "root",
+  password: "",
+  database: "fresh_choice",
   waitForConnections: true,
   connectionLimit: 10,
-  queueLimit: 0
+  queueLimit: 0,
 });
 
 db.getConnection((err, conn) => {
@@ -36,34 +37,35 @@ db.getConnection((err, conn) => {
   console.log("MySQL connected");
   conn.release();
 });
+
 // -----------------------------
 // SESSIONS (MySQL session store)
 // -----------------------------
-const sessionStore = new MySQLSessionStore(
-  {
-    host: "localhost",
-    user: "root",
-    password: "",
-    database: "fresh_choice",
-    clearExpired: true,
-    checkExpirationInterval: 15 * 60 * 1000,
-    expiration: 24 * 60 * 60 * 1000,
-  }
-);
+const sessionStore = new MySQLSessionStore({
+  host: "localhost",
+  user: "root",
+  password: "",
+  database: "fresh_choice",
+  clearExpired: true,
+  checkExpirationInterval: 15 * 60 * 1000,
+  expiration: 24 * 60 * 60 * 1000,
+});
 
-app.use(session({
-  name: "freshchoice.sid",
-  secret: "change_this_secret_for_school_project", // later in .env
-  resave: false,
-  saveUninitialized: false,
-  store: sessionStore,
-  cookie: {
-    httpOnly: true,
-    secure: false,     // lokaal op http
-    sameSite: "lax",   // prima voor localhost
-    maxAge: 24 * 60 * 60 * 1000,
-  }
-}));
+app.use(
+  session({
+    name: "freshchoice.sid",
+    secret: "change_this_secret_for_school_project", // later in .env
+    resave: false,
+    saveUninitialized: false,
+    store: sessionStore,
+    cookie: {
+      httpOnly: true,
+      secure: false, // lokaal op http
+      sameSite: "lax", // prima voor localhost
+      maxAge: 24 * 60 * 60 * 1000,
+    },
+  })
+);
 
 // -----------------------------
 // AUTH MIDDLEWARE
@@ -76,9 +78,9 @@ function requireAuth(req, res, next) {
 }
 
 // -----------------------------
-// ALLERGENEN OPHALEN
+// ALLERGENEN OPHALEN (masterlijst)
 // -----------------------------
-app.get('/api/allergenen', (req, res) => {
+app.get("/api/allergenen", (req, res) => {
   const q = "SELECT id, naam FROM allergenen ORDER BY naam ASC";
   db.query(q, (err, results) => {
     if (err) {
@@ -90,16 +92,91 @@ app.get('/api/allergenen', (req, res) => {
 });
 
 // -----------------------------
+// ✅ NIEUW: HUIDIGE ALLERGENEN VAN INGELOGDE USER (ids)
+// -----------------------------
+app.get("/api/my-allergenen", requireAuth, async (req, res) => {
+  const userId = req.session.userId;
+
+  const q = `
+    SELECT a.id, a.naam
+    FROM klant_allergenen ka
+    JOIN allergenen a ON a.id = ka.allergeen_id
+    WHERE ka.klant_id = ?
+    ORDER BY a.naam ASC
+  `;
+
+  db.query(q, [userId], (err, rows) => {
+    if (err) {
+      console.error("DB error fetching my allergenen:", err);
+      return res.status(500).json({ error: "Database fout." });
+    }
+    // Alleen ids terugsturen is het makkelijkst voor checkboxes
+    res.json(rows.map((r) => r.id));
+  });
+});
+
+// -----------------------------
+// ✅ NIEUW: ALLERGENEN VAN INGELOGDE USER OPSLAAN (replace)
+// -----------------------------
+app.put("/api/my-allergenen", requireAuth, async (req, res) => {
+  const userId = req.session.userId;
+
+  const allergenenIds = Array.isArray(req.body?.allergenen)
+    ? req.body.allergenen
+        .map((x) => Number(x))
+        .filter((n) => Number.isInteger(n) && n > 0)
+    : [];
+
+  let conn;
+  try {
+    conn = await db.promise().getConnection();
+    await conn.beginTransaction();
+
+    // 1) verwijder oude records
+    await conn.query("DELETE FROM klant_allergenen WHERE klant_id = ?", [userId]);
+
+    // 2) als leeg → commit
+    if (allergenenIds.length === 0) {
+      await conn.commit();
+      conn.release();
+      return res.json({ message: "Allergenen opgeslagen.", allergenen: [] });
+    }
+
+    // 3) insert nieuwe records
+    const values = allergenenIds.map((aid) => [userId, aid]);
+    await conn.query(
+      "INSERT INTO klant_allergenen (klant_id, allergeen_id) VALUES ?",
+      [values]
+    );
+
+    await conn.commit();
+    conn.release();
+    return res.json({ message: "Allergenen opgeslagen.", allergenen: allergenenIds });
+  } catch (err) {
+    console.error("DB error saving my allergenen:", err);
+    try {
+      if (conn) {
+        await conn.rollback();
+        conn.release();
+      }
+    } catch {}
+    return res.status(500).json({ error: "Database fout bij opslaan allergenen." });
+  }
+});
+
+// -----------------------------
 // REGISTREREN (optioneel allergenen) - POOL + TRANSACTION
 // -----------------------------
-app.post('/api/register', async (req, res) => {
+app.post("/api/register", async (req, res) => {
   let conn;
 
   try {
     let { naam, email, wachtwoord, adres, telefoonnummer, allergenen } = req.body;
 
     if (!naam || !email || !wachtwoord) {
-      return res.status(400).json({ error: "Ontbrekende velden: naam, email en wachtwoord zijn vereist." });
+      return res.status(400).json({
+        error: "Ontbrekende velden: naam, email en wachtwoord zijn vereist.",
+      });
     }
 
     naam = String(naam).trim();
@@ -117,7 +194,10 @@ app.post('/api/register', async (req, res) => {
     conn = await db.promise().getConnection();
 
     // check email bestaat al
-    const [existing] = await conn.query("SELECT id FROM klant WHERE email = ? LIMIT 1", [email]);
+    const [existing] = await conn.query(
+      "SELECT id FROM klant WHERE email = ? LIMIT 1",
+      [email]
+    );
     if (existing.length > 0) {
       conn.release();
       return res.status(400).json({ error: "E-mail bestaat al." });
@@ -143,7 +223,10 @@ app.post('/api/register', async (req, res) => {
     // allergenen insert (optioneel)
     if (allergenenIds.length > 0) {
       const values = allergenenIds.map((aid) => [klantId, aid]);
-      await conn.query("INSERT INTO klant_allergenen (klant_id, allergeen_id) VALUES ?", [values]);
+      await conn.query(
+        "INSERT INTO klant_allergenen (klant_id, allergeen_id) VALUES ?",
+        [values]
+      );
     }
 
     await conn.commit();
@@ -169,7 +252,7 @@ app.post('/api/register', async (req, res) => {
 // -----------------------------
 // LOGIN (zet session userId)
 // -----------------------------
-app.post('/api/login', (req, res) => {
+app.post("/api/login", (req, res) => {
   let { email, wachtwoord } = req.body;
 
   email = String(email || "").trim().toLowerCase();
@@ -182,11 +265,13 @@ app.post('/api/login', (req, res) => {
   const q = "SELECT * FROM klant WHERE email = ? LIMIT 1";
   db.query(q, [email], async (err, results) => {
     if (err) return res.status(500).json({ error: "Database fout." });
-    if (!results || results.length === 0) return res.status(401).json({ error: "Email of wachtwoord klopt niet." });
+    if (!results || results.length === 0)
+      return res.status(401).json({ error: "Email of wachtwoord klopt niet." });
 
     const user = results[0];
     const pwMatch = await bcrypt.compare(wachtwoord, user.password_hash);
-    if (!pwMatch) return res.status(401).json({ error: "Email of wachtwoord klopt niet." });
+    if (!pwMatch)
+      return res.status(401).json({ error: "Email of wachtwoord klopt niet." });
 
     // ✅ session opslaan
     req.session.userId = user.id;
@@ -198,7 +283,7 @@ app.post('/api/login', (req, res) => {
 // -----------------------------
 // LOGOUT
 // -----------------------------
-app.post('/api/logout', (req, res) => {
+app.post("/api/logout", (req, res) => {
   req.session.destroy((err) => {
     if (err) return res.status(500).json({ error: "Uitloggen mislukt." });
 
@@ -210,19 +295,24 @@ app.post('/api/logout', (req, res) => {
 // -----------------------------
 // ME (handig voor frontend: check session)
 // -----------------------------
-app.get('/api/me', requireAuth, (req, res) => {
+app.get("/api/me", requireAuth, (req, res) => {
   const userId = req.session.userId;
-  db.query("SELECT id, naam, email FROM klant WHERE id = ? LIMIT 1", [userId], (err, results) => {
-    if (err) return res.status(500).json({ error: "Database fout." });
-    if (!results || results.length === 0) return res.status(404).json({ error: "User niet gevonden." });
-    res.json(results[0]);
-  });
+  db.query(
+    "SELECT id, naam, email FROM klant WHERE id = ? LIMIT 1",
+    [userId],
+    (err, results) => {
+      if (err) return res.status(500).json({ error: "Database fout." });
+      if (!results || results.length === 0)
+        return res.status(404).json({ error: "User niet gevonden." });
+      res.json(results[0]);
+    }
+  );
 });
 
 // -----------------------------
-// PROFIEL OPHALEN (adres/telefoon) via session
+// PROFIEL OPHALEN (naam/email/adres/telefoon) via session
 // -----------------------------
-app.get('/api/profile', requireAuth, (req, res) => {
+app.get("/api/profile", requireAuth, (req, res) => {
   const userId = req.session.userId;
 
   const q = `
@@ -235,7 +325,8 @@ app.get('/api/profile', requireAuth, (req, res) => {
 
   db.query(q, [userId], (err, results) => {
     if (err) return res.status(500).json({ error: "Database fout." });
-    if (!results || results.length === 0) return res.status(404).json({ error: "User niet gevonden." });
+    if (!results || results.length === 0)
+      return res.status(404).json({ error: "User niet gevonden." });
     res.json(results[0]);
   });
 });
@@ -243,7 +334,7 @@ app.get('/api/profile', requireAuth, (req, res) => {
 // -----------------------------
 // PROFIEL OPSLAAN (naam/e-mail/adres/telefoon) via session
 // -----------------------------
-app.put('/api/profile', requireAuth, async (req, res) => {
+app.put("/api/profile", requireAuth, async (req, res) => {
   const userId = req.session.userId;
 
   let { naam, email, adres, telefoonnummer } = req.body;
@@ -274,10 +365,11 @@ app.put('/api/profile', requireAuth, async (req, res) => {
     }
 
     // ✅ Update klant
-    await conn.query(
-      "UPDATE klant SET naam = ?, email = ? WHERE id = ?",
-      [naam, email, userId]
-    );
+    await conn.query("UPDATE klant SET naam = ?, email = ? WHERE id = ?", [
+      naam,
+      email,
+      userId,
+    ]);
 
     // ✅ Upsert klantinformatie
     await conn.query(
@@ -310,4 +402,4 @@ app.put('/api/profile', requireAuth, async (req, res) => {
 // -----------------------------
 // SERVER STARTEN
 // -----------------------------
-app.listen(3001, () => console.log('Server draait op http://localhost:3001'));
+app.listen(3001, () => console.log("Server draait op http://localhost:3001"));
