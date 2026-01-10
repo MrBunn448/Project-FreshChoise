@@ -29,7 +29,11 @@ npm install
 cd server
 npm install bcrypt
 
-# 3. Install Client dependencies
+# 3. Install express-sessions dependancies
+cd server
+npm i express-session connect-mysql2
+
+# 4. Install Client dependencies
 cd ../client
 npm install
 
