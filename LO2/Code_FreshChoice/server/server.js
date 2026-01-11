@@ -11,7 +11,7 @@ const SALT_ROUNDS = 10;
 const app = express();
 app.use(express.json());
 
-// ✅ CORS moet credentials toestaan voor cookies
+// CORS moet credentials toestaan voor cookies
 app.use(
   cors({
     origin: "http://localhost:5173", // Vite
@@ -61,7 +61,7 @@ app.use(
     cookie: {
       httpOnly: true,
       secure: false, // lokaal op http
-      sameSite: "lax", // prima voor localhost
+      sameSite: "lax", // CSRF bescherming
       maxAge: 24 * 60 * 60 * 1000,
     },
   })
@@ -78,7 +78,7 @@ function requireAuth(req, res, next) {
 }
 
 // -----------------------------
-// ALLERGENEN OPHALEN (masterlijst)
+// ALLERGENEN OPHALEN
 // -----------------------------
 app.get("/api/allergenen", (req, res) => {
   const q = "SELECT id, naam FROM allergenen ORDER BY naam ASC";
@@ -92,7 +92,7 @@ app.get("/api/allergenen", (req, res) => {
 });
 
 // -----------------------------
-// ✅ NIEUW: HUIDIGE ALLERGENEN VAN INGELOGDE USER (ids)
+// HUIDIGE ALLERGENEN VAN INGELOGDE USER (ids)
 // -----------------------------
 app.get("/api/my-allergenen", requireAuth, async (req, res) => {
   const userId = req.session.userId;
@@ -116,7 +116,7 @@ app.get("/api/my-allergenen", requireAuth, async (req, res) => {
 });
 
 // -----------------------------
-// ✅ NIEUW: ALLERGENEN VAN INGELOGDE USER OPSLAAN (replace)
+// ALLERGENEN VAN INGELOGDE USER OPSLAAN
 // -----------------------------
 app.put("/api/my-allergenen", requireAuth, async (req, res) => {
   const userId = req.session.userId;
@@ -165,7 +165,7 @@ app.put("/api/my-allergenen", requireAuth, async (req, res) => {
 });
 
 // -----------------------------
-// REGISTREREN (optioneel allergenen) - POOL + TRANSACTION
+// REGISTREREN optionele allergenen - POOL + TRANSACTION
 // -----------------------------
 app.post("/api/register", async (req, res) => {
   let conn;
@@ -190,7 +190,7 @@ app.post("/api/register", async (req, res) => {
       ? allergenen.map((x) => Number(x)).filter((n) => Number.isInteger(n) && n > 0)
       : [];
 
-    // ✅ pak een connection uit de pool
+    // pak een connection uit de pool
     conn = await db.promise().getConnection();
 
     // check email bestaat al
@@ -214,7 +214,7 @@ app.post("/api/register", async (req, res) => {
     );
     const klantId = klantRes.insertId;
 
-    // klantinformatie insert (adres/telefoon optioneel)
+    // klantinformatie insert adres/telefoon (optioneel)
     await conn.query(
       "INSERT INTO klantinformatie (klant_id, adres, telefoonnummer) VALUES (?, ?, ?)",
       [klantId, adres, telefoonnummer]
@@ -273,7 +273,7 @@ app.post("/api/login", (req, res) => {
     if (!pwMatch)
       return res.status(401).json({ error: "Email of wachtwoord klopt niet." });
 
-    // ✅ session opslaan
+    // session opslaan
     req.session.userId = user.id;
 
     res.json({ id: user.id, naam: user.naam, email: user.email });
@@ -293,7 +293,7 @@ app.post("/api/logout", (req, res) => {
 });
 
 // -----------------------------
-// ME (handig voor frontend: check session)
+// ME (frontend: check session)
 // -----------------------------
 app.get("/api/me", requireAuth, (req, res) => {
   const userId = req.session.userId;
@@ -353,7 +353,7 @@ app.put("/api/profile", requireAuth, async (req, res) => {
     conn = await db.promise().getConnection();
     await conn.beginTransaction();
 
-    // ✅ Check of email al bestaat bij een andere klant
+    // Check of email al bestaat bij een andere klant
     const [emailRows] = await conn.query(
       "SELECT id FROM klant WHERE email = ? AND id <> ? LIMIT 1",
       [email, userId]
@@ -364,14 +364,14 @@ app.put("/api/profile", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "E-mail bestaat al." });
     }
 
-    // ✅ Update klant
+    // Update klant
     await conn.query("UPDATE klant SET naam = ?, email = ? WHERE id = ?", [
       naam,
       email,
       userId,
     ]);
 
-    // ✅ Upsert klantinformatie
+    // Upsert klantinformatie
     await conn.query(
       `
       INSERT INTO klantinformatie (klant_id, adres, telefoonnummer)

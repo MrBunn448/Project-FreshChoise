@@ -102,7 +102,7 @@ export default function App() {
         wachtwoord,
         telefoonnummer,
         adres,
-        allergenen: selectedAllergenen, // optioneel
+        allergenen: selectedAllergenen, 
       });
 
       alert("Account aangemaakt! Log nu in.");
@@ -142,7 +142,7 @@ export default function App() {
         onLogout={handleLogout}
       />
 
-      {/* CONTENT */}
+      {/* Views */}
       {view === "home" && <HomePage isLoggedIn={!!currentUser} />}
 
       {view === "products" && <ProductsPage />}
@@ -326,7 +326,7 @@ function HomePage(props: { isLoggedIn: boolean }) {
         </div>
       </section>
 
-      {/* Kleine statusregel (optioneel) */}
+      {/* Kleine statusregel */}
       <section className="mt-12 mb-8">
         <div className="h-2 rounded-full bg-gray-100" />
         <p className="mt-3 text-xs text-gray-400">
@@ -684,7 +684,7 @@ function AccountPage(props: {
   const [telefoon, setTelefoon] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // ✅ Allergenen in account
+  //  Allergenen in account
   const [allergenen, setAllergenen] = useState<Allergeen[]>([]);
   const [selectedMyAllergenen, setSelectedMyAllergenen] = useState<number[]>([]);
   const [loadingAllergenen, setLoadingAllergenen] = useState(false);
@@ -699,13 +699,13 @@ function AccountPage(props: {
   useEffect(() => {
     const init = async () => {
       try {
-        // 1) check sessie
+        // check sessie
         if (!user) {
           const meRes = await axios.get(`${API_URL}/api/me`);
           onUserLoaded?.(meRes.data);
         }
 
-        // 2) profiel
+        // profiel
         const profRes = await axios.get(`${API_URL}/api/profile`);
         setProfile(profRes.data);
         setNaam(profRes.data.naam ?? "");
@@ -713,7 +713,7 @@ function AccountPage(props: {
         setAdres(profRes.data.adres ?? "");
         setTelefoon(profRes.data.telefoonnummer ?? "");
 
-        // 3) allergenen master + mijn selectie
+        // allergenen master + mijn selectie
         setLoadingAllergenen(true);
         const [allRes, myRes] = await Promise.all([
           axios.get(`${API_URL}/api/allergenen`),
@@ -731,7 +731,6 @@ function AccountPage(props: {
     };
 
     init();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const saveProfile = async () => {
@@ -744,7 +743,7 @@ function AccountPage(props: {
         telefoonnummer: telefoon,
       });
 
-      // (handig) profile state syncen
+      // profile state syncen
       setProfile((p) =>
         p
           ? {
@@ -873,7 +872,7 @@ function AccountPage(props: {
                 </div>
               </div>
 
-              {/* ✅ Allergenen blok in Account */}
+              {/* Allergenen blok in Account */}
               <div className="mt-10 border-t border-gray-300 pt-6">
                 <div className="flex items-start justify-between gap-4">
                   <div>
