@@ -1,0 +1,70 @@
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =========================
+   BASE (globaal gedrag)
+========================= */
+@layer base {
+  html {
+    @apply scroll-smooth;
+  }
+
+  body {
+    @apply bg-white text-gray-700 antialiased;
+  }
+
+  h1, h2, h3, h4 {
+    @apply text-gray-800;
+  }
+}
+
+/* =========================
+   COMPONENTS (wireframe look)
+========================= */
+@layer components {
+
+  /* Content container zoals wireframe */
+  .container-page {
+    @apply max-w-6xl mx-auto px-4;
+  }
+
+  /* Buttons */
+  .btn-primary {
+    @apply px-6 py-2 rounded-full bg-gray-700 text-white text-sm
+           hover:bg-gray-800 transition;
+  }
+
+  .btn-secondary {
+    @apply px-6 py-2 rounded-full bg-gray-200 text-gray-700 text-sm
+           hover:bg-gray-300 transition;
+  }
+
+  /* Inputs */
+  .input {
+    @apply w-full border border-gray-300 rounded-md px-3 py-2
+           outline-none focus:ring-2 focus:ring-gray-300;
+  }
+
+  /* Cards / panels */
+  .card {
+    @apply border rounded-md bg-gray-100 p-6;
+  }
+
+  /* Image placeholder (voor wireframe) */
+  .image-placeholder {
+    @apply flex items-center justify-center
+           bg-gray-100 text-gray-400 border rounded-md;
+  }
+}
+
+/* =========================
+   UTILITIES 
+========================= */
+@layer utilities {
+  .text-muted {
+    @apply text-gray-500;
+  }
+}
