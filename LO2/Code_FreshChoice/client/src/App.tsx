@@ -372,6 +372,7 @@ function ProductsPage() {
 
   // cart: map productId -> qty
   const [cart, setCart] = useState<Record<number, number>>({});
+  const [confirmAdd, setConfirmAdd] = useState<{ productId: number; add: number; allerNaam: string } | null>(null);
 
   // user's allergenen (from /api/my-allergenen) used to show warnings; optional
   const [myAllergenen, setMyAllergenen] = useState<number[]>([]);
@@ -389,6 +390,14 @@ function ProductsPage() {
   }, []);
 
   const addToCart = (productId: number, add = 1) => {
+    const prod = products.find((p) => p.id === productId);
+    if (prod && prod.allergeen_id && myAllergenen.includes(prod.allergeen_id)) {
+      // show confirmation modal with custom button text
+      const allerNaam = prod.allergeen_naam || 'een allergeen';
+      setConfirmAdd({ productId, add, allerNaam });
+      return;
+    }
+
     setCart((c) => {
       const next = { ...c };
       next[productId] = Math.min(99, (next[productId] || 0) + add);
@@ -426,6 +435,18 @@ function ProductsPage() {
     return res.data as Product;
   };
 
+  // Handlers for the confirm-add modal (shown when adding allergenic products)
+  const handleConfirmAdd = (productId: number, add: number) => {
+    setCart((c: Record<number, number>) => {
+      const next = { ...c };
+      next[productId] = Math.min(99, (next[productId] || 0) + add);
+      return next;
+    });
+    setConfirmAdd(null);
+  };
+
+  const handleCancelAdd = () => setConfirmAdd(null);
+
   return (
     <main className="mx-auto max-w-6xl px-4">
       <section className="mt-10 flex flex-col md:flex-row md:items-start md:justify-between gap-6">
@@ -452,20 +473,22 @@ function ProductsPage() {
                 Alleen non-allergenen tonen (gebruikersfilter)
               </label>
             </div>
-            {loading ? (
+                {loading ? (
               <div className="text-gray-500">Laden...</div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-10">
                 {visible.map((p) => (
                   <ProductCard key={p.id} product={p} onAdd={() => addToCart(p.id)} onView={() => { fetchProductDetail(p.id).then((pd)=> setDetailProduct(pd)).catch(()=>{}) }} myAllergenen={myAllergenen} />
                 ))}
+                {/* Product detail modal (shows when detailProduct is set) */}
+                <ProductDetailModal product={detailProduct} onClose={() => setDetailProduct(null)} myAllergenen={myAllergenen} />
               </div>
             )}
           </div>
         </div>
 
-        <aside className="lg:col-span-1">
-          <CartSidebar products={products} cart={cart} onAdd={addToCart} onRemove={removeFromCart} onUpdate={updateQty} setCart={setCart} myAllergenen={myAllergenen} />
+          <aside className="lg:col-span-1">
+          <CartSidebar products={products} cart={cart} onAdd={addToCart} onRemove={removeFromCart} onUpdate={updateQty} setCart={setCart} myAllergenen={myAllergenen} confirmAdd={confirmAdd} onConfirmAdd={handleConfirmAdd} onCancelAdd={handleCancelAdd} />
         </aside>
       </section>
     </main>
@@ -473,14 +496,24 @@ function ProductsPage() {
 }
 
 // Product detail modal (simple)
-function ProductDetailModal({ product, onClose }: { product: Product | null; onClose: () => void }) {
+function ProductDetailModal({ product, onClose, myAllergenen }: { product: Product | null; onClose: () => void; myAllergenen: number[] }) {
   if (!product) return null;
+
+  const containsAllergeen = product.allergeen_id ? myAllergenen.includes(product.allergeen_id) : false;
+
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center">
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-40">
       <div className="bg-white rounded-md p-6 max-w-md w-full">
         <h3 className="text-xl font-semibold mb-2">{product.naam}</h3>
         <p className="text-sm text-gray-600">Prijs: € {product.prijs.toFixed(2)}</p>
         <p className="text-sm text-gray-600">Allergeen: {product.allergeen_naam ?? 'Geen'}</p>
+
+        {containsAllergeen && (
+          <div className="mt-3 p-3 bg-red-50 border border-red-200 text-red-700 rounded">
+            <strong>Waarschuwing:</strong> Dit product bevat een allergeen waarvoor je gemarkeerd bent. Kies een alternatief.
+          </div>
+        )}
+
         <div className="mt-4 flex justify-end">
           <button onClick={onClose} className="px-4 py-2 rounded bg-gray-200">Close</button>
         </div>
@@ -516,7 +549,7 @@ function ProductCard({ product, onAdd, onView, myAllergenen }: { product: Produc
   );
 }
 
-function CartSidebar({ products, cart, onAdd, onRemove, onUpdate, setCart, myAllergenen }: { products: Product[]; cart: Record<number, number>; onAdd: (id:number, add?:number)=>void; onRemove: (id:number)=>void; onUpdate: (id:number, qty:number)=>void; setCart: any; myAllergenen: number[] }) {
+function CartSidebar({ products, cart, onAdd, onRemove, onUpdate, setCart, myAllergenen, confirmAdd, onConfirmAdd, onCancelAdd }: { products: Product[]; cart: Record<number, number>; onAdd: (id:number, add?:number)=>void; onRemove: (id:number)=>void; onUpdate: (id:number, qty:number)=>void; setCart: any; myAllergenen: number[]; confirmAdd: { productId: number; add: number; allerNaam: string } | null; onConfirmAdd: (productId:number, add:number)=>void; onCancelAdd: ()=>void }) {
   const items = Object.entries(cart).map(([pid, qty]) => {
     const p = products.find((x) => x.id === Number(pid));
     return p ? { ...p, qty: Number(qty) } : null;
@@ -549,6 +582,7 @@ function CartSidebar({ products, cart, onAdd, onRemove, onUpdate, setCart, myAll
   };
 
   const [barcodeImage, setBarcodeImage] = useState<string | null>(null);
+  // confirmAdd state and handlers are provided by parent (ProductsPage)
 
   return (
     <div className="border rounded-md p-4 bg-white">
@@ -582,6 +616,7 @@ function CartSidebar({ products, cart, onAdd, onRemove, onUpdate, setCart, myAll
       )}
       {/* Show modal with scannable barcode image when available */}
       <BarcodeModal image={barcodeImage} onClose={() => setBarcodeImage(null)} />
+      <ConfirmModal openData={confirmAdd} onConfirm={onConfirmAdd} onCancel={onCancelAdd} />
     </div>
   );
 }
@@ -1102,5 +1137,22 @@ function Footer(props: { onGoHome: () => void }) {
         </div>
       </div>
     </footer>
+  );
+}
+
+function ConfirmModal({ openData, onConfirm, onCancel }: { openData: { productId: number; add: number; allerNaam: string } | null; onConfirm: (productId:number, add:number)=>void; onCancel: ()=>void }) {
+  if (!openData) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-md p-6 max-w-md w-full">
+        <h3 className="text-lg font-semibold mb-2">Waarschuwing: bevat allergeen</h3>
+        <p className="text-sm text-gray-700">Dit product bevat {openData.allerNaam}. Weet je zeker dat je het wilt toevoegen?</p>
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={() => onCancel()} className="px-4 py-2 rounded bg-gray-200">Annuleren</button>
+          <button onClick={() => onConfirm(openData.productId, openData.add)} className="px-4 py-2 rounded bg-green-600 text-white">Toch toevoegen</button>
+        </div>
+      </div>
+    </div>
   );
 }

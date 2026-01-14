@@ -176,17 +176,33 @@ app.get("/api/allergenen", (req, res) => {
 
       // Generate barcode image (Code128) as PNG (base64) using bwip-js
       try {
+        // We encode the digits without spaces for scanner reliability, but set the
+        // human-readable text (alt text under the bars) to include the spaces.
+        const encoded = barcode.replace(/\s+/g, ''); // e.g. '010300'
+        const humanText = barcode; // e.g. '01 03 00'
+
         const png = await bwipjs.toBuffer({
           bcid:        'code128',       // Barcode type
-          text:        barcode.replace(/\s+/g, ''), // remove spaces for encoding
+          text:        encoded,
           scale:       3,               // 3x scaling
-          height:      10,              // bar height, in mm
+          height:      10,              // bar height
           includetext: true,            // show human-readable text
           textxalign:  'center',
+          text: humanText, // ensure the visible text includes spaces
         });
 
         const base64 = png.toString('base64');
         const dataUrl = `data:image/png;base64,${base64}`;
+
+        // Persist order to DB (store quantities and barcode). klient may be null.
+        try {
+          const klantId = req.session.userId || null;
+          const insertQ = `INSERT INTO orders (klant_id, brood_qty, kaas_qty, noten_qty, barcode) VALUES (?, ?, ?, ?, ?)`;
+          await db.promise().query(insertQ, [klantId, counts.brood, counts.kaas, counts.noten, barcode]);
+        } catch (err) {
+          console.error('Failed to persist order:', err);
+          // continue, barcode generation succeeded; we still return the image
+        }
 
         return res.json({ barcode, counts, barcodeImage: dataUrl });
       } catch (err) {
@@ -415,6 +431,22 @@ app.get("/api/me", requireAuth, (req, res) => {
       res.json(results[0]);
     }
   );
+});
+
+// Public endpoint: get order by barcode (external system can call this)
+app.get('/api/orders/barcode/:code', async (req, res) => {
+  const code = String(req.params.code || '').trim();
+  if (!code) return res.status(400).json({ error: 'Barcode is required' });
+
+  try {
+    const q = `SELECT id, klant_id, brood_qty, kaas_qty, noten_qty, barcode, created_at FROM orders WHERE barcode = ? LIMIT 1`;
+    const [rows] = await db.promise().query(q, [code]);
+    if (!rows || rows.length === 0) return res.status(404).json({ error: 'Order not found' });
+    return res.json(rows[0]);
+  } catch (err) {
+    console.error('DB error fetching order by barcode:', err);
+    return res.status(500).json({ error: 'Database fout.' });
+  }
 });
 
 // -----------------------------

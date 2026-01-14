@@ -103,10 +103,24 @@ const PRODUCTS_SQL = `
   SELECT 'Noten', 4.25, a.id FROM allergenen a WHERE a.naam LIKE '%noten%';
 `;
 
+// Orders table to persist POC orders and barcode for external systems
+const ORDERS_SQL = `
+  CREATE TABLE IF NOT EXISTS orders (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    klant_id INT NULL,
+    brood_qty INT NOT NULL DEFAULT 0,
+    kaas_qty INT NOT NULL DEFAULT 0,
+    noten_qty INT NOT NULL DEFAULT 0,
+    barcode VARCHAR(16) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_orders_klant FOREIGN KEY (klant_id) REFERENCES klant(id) ON DELETE SET NULL
+  ) ENGINE=InnoDB;
+`;
+
 connection.connect(err => {
   if (err) throw err;
   console.log("Connected to MySQL. Running migration...");
-  connection.query(MIGRATION_SCRIPT + PRODUCTS_SQL, (err) => {
+  connection.query(MIGRATION_SCRIPT + PRODUCTS_SQL + ORDERS_SQL, (err) => {
     if (err) throw err;
     console.log("\u2705 Database setup complete!");
     connection.end();
