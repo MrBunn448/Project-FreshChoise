@@ -80,12 +80,49 @@ const MIGRATION_SCRIPT = `
     ('weekdieren');
 `;
 
+// Add products table and seed three POC products which map to allergenen seeded above.
+// For this POC there are exactly 3 products: brood (gluten), kaas (lactose), noten (noten)
+const PRODUCTS_SQL = `
+  -- PRODUCTS table (POC)
+  CREATE TABLE IF NOT EXISTS product (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    naam VARCHAR(255) NOT NULL,
+    prijs DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    allergeen_id INT NULL,
+    CONSTRAINT fk_product_allergeen FOREIGN KEY (allergeen_id) REFERENCES allergenen(id) ON DELETE SET NULL
+  ) ENGINE=InnoDB;
+
+  -- Seed the three allowed products. We use INSERT ... SELECT to map to the allergenen rows created above.
+  INSERT INTO product (naam, prijs, allergeen_id)
+  SELECT 'Brood', 2.75, a.id FROM allergenen a WHERE a.naam LIKE '%gluten%';
+
+  INSERT INTO product (naam, prijs, allergeen_id)
+  SELECT 'Kaas', 3.50, a.id FROM allergenen a WHERE a.naam LIKE '%melk%';
+
+  INSERT INTO product (naam, prijs, allergeen_id)
+  SELECT 'Noten', 4.25, a.id FROM allergenen a WHERE a.naam LIKE '%noten%';
+`;
+
+// Orders table to persist POC orders and barcode for external systems
+const ORDERS_SQL = `
+  CREATE TABLE IF NOT EXISTS orders (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    klant_id INT NULL,
+    brood_qty INT NOT NULL DEFAULT 0,
+    kaas_qty INT NOT NULL DEFAULT 0,
+    noten_qty INT NOT NULL DEFAULT 0,
+    barcode VARCHAR(16) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_orders_klant FOREIGN KEY (klant_id) REFERENCES klant(id) ON DELETE SET NULL
+  ) ENGINE=InnoDB;
+`;
+
 connection.connect(err => {
   if (err) throw err;
   console.log("Connected to MySQL. Running migration...");
-  connection.query(MIGRATION_SCRIPT, (err) => {
+  connection.query(MIGRATION_SCRIPT + PRODUCTS_SQL + ORDERS_SQL, (err) => {
     if (err) throw err;
-    console.log("✅ Database setup complete!");
+    console.log("\u2705 Database setup complete!");
     connection.end();
   });
 });

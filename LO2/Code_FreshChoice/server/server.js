@@ -5,6 +5,7 @@ const bcrypt = require("bcrypt");
 
 const session = require("express-session");
 const MySQLSessionStore = require("express-mysql-session")(session);
+const bwipjs = require('bwip-js');
 
 const SALT_ROUNDS = 10;
 
@@ -90,6 +91,129 @@ app.get("/api/allergenen", (req, res) => {
     res.json(results);
   });
 });
+
+  // -----------------------------
+  // PRODUCTEN (POC: only 3 products seeded)
+  // -----------------------------
+  app.get('/api/products', (req, res) => {
+    const q = `SELECT p.id, p.naam, p.prijs, p.allergeen_id, a.naam as allergeen_naam
+      FROM product p
+      LEFT JOIN allergenen a ON a.id = p.allergeen_id
+      ORDER BY p.id ASC`;
+    db.query(q, (err, rows) => {
+      if (err) {
+        console.error('DB error fetching products:', err);
+        return res.status(500).json({ error: 'Database fout.' });
+      }
+      // map to simple shape
+      res.json(rows.map(r => ({ id: r.id, naam: r.naam, prijs: Number(r.prijs), allergeen_id: r.allergeen_id, allergeen_naam: r.allergeen_naam })));
+    });
+  });
+
+  app.get('/api/products/:id', (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' });
+    const q = `SELECT p.id, p.naam, p.prijs, p.allergeen_id, a.naam as allergeen_naam FROM product p LEFT JOIN allergenen a ON a.id = p.allergeen_id WHERE p.id = ? LIMIT 1`;
+    db.query(q, [id], (err, rows) => {
+      if (err) return res.status(500).json({ error: 'Database fout.' });
+      if (!rows || rows.length === 0) return res.status(404).json({ error: 'Product niet gevonden.' });
+      const r = rows[0];
+      res.json({ id: r.id, naam: r.naam, prijs: Number(r.prijs), allergeen_id: r.allergeen_id, allergeen_naam: r.allergeen_naam });
+    });
+  });
+
+  // -----------------------------
+  // ORDERS / BARCODE GENERATION (POC)
+  // - Accepts an order payload with up to 3 product types and quantity per product (0-99)
+  // - Generates a fixed 3-field barcode "XX YY ZZ" where positions are (brood, kaas, noten)
+  // -----------------------------
+  app.post('/api/orders', requireAuth, async (req, res) => {
+    // payload: { items: [{ productId, qty }] }
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+
+    // Map product ids to counts
+    const counts = { brood: 0, kaas: 0, noten: 0 };
+
+    // Allowed product names in DB: Brood, Kaas, Noten (case-insensitive)
+    const ids = items
+      .map(it => ({ productId: Number(it.productId), qty: Number(it.qty) }))
+      .filter(it => Number.isInteger(it.productId) && it.productId > 0 && Number.isInteger(it.qty) && it.qty >= 0 && it.qty <= 99);
+
+    if (ids.length === 0) return res.status(400).json({ error: 'Geen items in bestelling.' });
+
+    // Fetch product names for the provided ids using promise API so we can await bwip-js
+    try {
+      const placeholders = ids.map(() => '?').join(',') || 'NULL';
+      const q = `SELECT id, naam FROM product WHERE id IN (${placeholders})`;
+      const [rows] = await db.promise().query(q, ids.map(i => i.productId));
+
+      // Build name map
+      const nameMap = {};
+      for (const r of rows) nameMap[r.id] = String(r.naam).toLowerCase();
+
+      // Only allow the three allowed products
+      for (const it of ids) {
+        const name = nameMap[it.productId];
+        if (!name) return res.status(400).json({ error: 'Ongeldig product in bestelling.' });
+        if (name.includes('brood')) counts.brood += it.qty;
+        else if (name.includes('kaas')) counts.kaas += it.qty;
+        else if (name.includes('noten')) counts.noten += it.qty;
+        else return res.status(400).json({ error: 'Alleen brood, kaas en noten zijn toegestaan in POC.' });
+      }
+
+      // Enforce maximum 3 different products (here difference is whether qty>0 for each type)
+      const different = [counts.brood > 0, counts.kaas > 0, counts.noten > 0].filter(Boolean).length;
+      if (different > 3) return res.status(400).json({ error: 'Te veel verschillende producten.' });
+
+      // Cap per product to 99
+      counts.brood = Math.min(99, counts.brood);
+      counts.kaas = Math.min(99, counts.kaas);
+      counts.noten = Math.min(99, counts.noten);
+
+      // Format barcode as two-digit zero-padded numbers per spec: "BB KK NN" where order is brood, kaas, noten
+      const fmt = (n) => String(n).padStart(2, '0');
+      const barcode = `${fmt(counts.brood)} ${fmt(counts.kaas)} ${fmt(counts.noten)}`;
+
+      // Generate barcode image (Code128) as PNG (base64) using bwip-js
+      try {
+        // We encode the digits without spaces for scanner reliability, but set the
+        // human-readable text (alt text under the bars) to include the spaces.
+        const encoded = barcode.replace(/\s+/g, ''); // e.g. '010300'
+        const humanText = barcode; // e.g. '01 03 00'
+
+        const png = await bwipjs.toBuffer({
+          bcid:        'code128',       // Barcode type
+          text:        encoded,
+          scale:       3,               // 3x scaling
+          height:      10,              // bar height
+          includetext: true,            // show human-readable text
+          textxalign:  'center',
+          text: humanText, // ensure the visible text includes spaces
+        });
+
+        const base64 = png.toString('base64');
+        const dataUrl = `data:image/png;base64,${base64}`;
+
+        // Persist order to DB (store quantities and barcode). klient may be null.
+        try {
+          const klantId = req.session.userId || null;
+          const insertQ = `INSERT INTO orders (klant_id, brood_qty, kaas_qty, noten_qty, barcode) VALUES (?, ?, ?, ?, ?)`;
+          await db.promise().query(insertQ, [klantId, counts.brood, counts.kaas, counts.noten, barcode]);
+        } catch (err) {
+          console.error('Failed to persist order:', err);
+          // continue, barcode generation succeeded; we still return the image
+        }
+
+        return res.json({ barcode, counts, barcodeImage: dataUrl });
+      } catch (err) {
+        console.error('Barcode generation error:', err);
+        return res.status(500).json({ error: 'Barcode generation failed.', barcode, counts });
+      }
+    } catch (err) {
+      console.error('DB error fetching products for order:', err);
+      return res.status(500).json({ error: 'Database fout.' });
+    }
+  });
 
 // -----------------------------
 // HUIDIGE ALLERGENEN VAN INGELOGDE USER (ids)
@@ -307,6 +431,22 @@ app.get("/api/me", requireAuth, (req, res) => {
       res.json(results[0]);
     }
   );
+});
+
+// Public endpoint: get order by barcode (external system can call this)
+app.get('/api/orders/barcode/:code', async (req, res) => {
+  const code = String(req.params.code || '').trim();
+  if (!code) return res.status(400).json({ error: 'Barcode is required' });
+
+  try {
+    const q = `SELECT id, klant_id, brood_qty, kaas_qty, noten_qty, barcode, created_at FROM orders WHERE barcode = ? LIMIT 1`;
+    const [rows] = await db.promise().query(q, [code]);
+    if (!rows || rows.length === 0) return res.status(404).json({ error: 'Order not found' });
+    return res.json(rows[0]);
+  } catch (err) {
+    console.error('DB error fetching order by barcode:', err);
+    return res.status(500).json({ error: 'Database fout.' });
+  }
 });
 
 // -----------------------------
