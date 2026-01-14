@@ -359,95 +359,247 @@ type Product = {
   prijs: number;
   categorie: string;
   imageUrl?: string; // later echte image
+  allergeen_id?: number | null;
+  allergeen_naam?: string | null;
 };
 
 function ProductsPage() {
   const [query, setQuery] = useState("");
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showNonAllergenOnly, setShowNonAllergenOnly] = useState(false);
+  const [detailProduct, setDetailProduct] = useState<Product | null>(null);
 
-  // Dummy data (later vervangen door API call)
-  const products: Product[] = [
-    { id: 1, naam: "Brood", prijs: 2.75, categorie: "Bakkerij" },
-    { id: 2, naam: "Kaas", prijs: 3.5, categorie: "Zuivel" },
-    { id: 3, naam: "Noten", prijs: 4.25, categorie: "Snack" },
-  ];
+  // cart: map productId -> qty
+  const [cart, setCart] = useState<Record<number, number>>({});
+
+  // user's allergenen (from /api/my-allergenen) used to show warnings; optional
+  const [myAllergenen, setMyAllergenen] = useState<number[]>([]);
+
+  useEffect(() => {
+    setLoading(true);
+    axios
+      .get(`${API_URL}/api/products`)
+      .then((res) => setProducts(res.data || []))
+      .catch(() => setProducts([]))
+      .finally(() => setLoading(false));
+
+    // Try to fetch my allergenen; ignore errors (user may be guest)
+    axios.get(`${API_URL}/api/my-allergenen`).then((res) => setMyAllergenen(Array.isArray(res.data) ? res.data : [])).catch(() => {});
+  }, []);
+
+  const addToCart = (productId: number, add = 1) => {
+    setCart((c) => {
+      const next = { ...c };
+      next[productId] = Math.min(99, (next[productId] || 0) + add);
+      return next;
+    });
+  };
+
+  const removeFromCart = (productId: number) => {
+    setCart((c) => {
+      const next = { ...c };
+      delete next[productId];
+      return next;
+    });
+  };
+
+  const updateQty = (productId: number, qty: number) => {
+    if (qty <= 0) return removeFromCart(productId);
+    setCart((c) => ({ ...c, [productId]: Math.min(99, qty) }));
+  };
 
   const filtered = products.filter((p) => {
     const q = query.trim().toLowerCase();
     if (!q) return true;
-    return p.naam.toLowerCase().includes(q) || p.categorie.toLowerCase().includes(q);
+    return p.naam.toLowerCase().includes(q) || String(p.allergeen_naam || "").toLowerCase().includes(q);
   });
+  // apply non-allergen filter
+  const visible = filtered.filter((p) => {
+    if (!showNonAllergenOnly) return true;
+    if (!p.allergeen_id) return true;
+    return !myAllergenen.includes(p.allergeen_id);
+  });
+
+  const fetchProductDetail = async (id: number) => {
+    const res = await axios.get(`${API_URL}/api/products/${id}`);
+    return res.data as Product;
+  };
 
   return (
     <main className="mx-auto max-w-6xl px-4">
-      {/* Header row: title left + search right */}
-      <section className="mt-10">
-        <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
-          <div>
-            <h1 className="text-5xl font-semibold text-gray-800">Products</h1>
-          </div>
+      <section className="mt-10 flex flex-col md:flex-row md:items-start md:justify-between gap-6">
+        <div>
+          <h1 className="text-5xl font-semibold text-gray-800">Products</h1>
+          <p className="text-sm text-gray-500 mt-2">POC: alleen Brood, Kaas en Noten zijn beschikbaar.</p>
+        </div>
 
-          <div className="w-full md:w-96">
-            <label className="block text-sm text-gray-600 mb-2">Search</label>
-            <div className="flex items-center gap-2 bg-white border rounded-md px-3 py-2 shadow-sm">
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Enter search terms"
-                className="w-full outline-none text-sm"
-              />
-              <span className="text-gray-400">🔍</span>
-            </div>
+        <div className="w-full md:w-96">
+          <label className="block text-sm text-gray-600 mb-2">Search</label>
+          <div className="flex items-center gap-2 bg-white border rounded-md px-3 py-2 shadow-sm">
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Enter search terms" className="w-full outline-none text-sm" />
+            <span className="text-gray-400">🔍</span>
           </div>
         </div>
       </section>
 
-      {/* Grid */}
-      <section className="mt-12 pb-12">
-        {filtered.length === 0 ? (
-          <div className="mt-10 text-gray-500">Geen producten gevonden voor “{query}”.</div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-10">
-            {filtered.map((p) => (
-              <ProductCard key={p.id} product={p} />
-            ))}
+      <section className="mt-6 grid grid-cols-1 lg:grid-cols-4 gap-8">
+        <div className="lg:col-span-3">
+          <div className="mt-6">
+            <div className="flex items-center gap-4 mb-4">
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={showNonAllergenOnly} onChange={(e) => setShowNonAllergenOnly(e.target.checked)} />
+                Alleen non-allergenen tonen (gebruikersfilter)
+              </label>
+            </div>
+            {loading ? (
+              <div className="text-gray-500">Laden...</div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-10">
+                {visible.map((p) => (
+                  <ProductCard key={p.id} product={p} onAdd={() => addToCart(p.id)} onView={() => { fetchProductDetail(p.id).then((pd)=> setDetailProduct(pd)).catch(()=>{}) }} myAllergenen={myAllergenen} />
+                ))}
+              </div>
+            )}
           </div>
-        )}
+        </div>
+
+        <aside className="lg:col-span-1">
+          <CartSidebar products={products} cart={cart} onAdd={addToCart} onRemove={removeFromCart} onUpdate={updateQty} setCart={setCart} myAllergenen={myAllergenen} />
+        </aside>
       </section>
     </main>
   );
 }
 
-function ProductCard({ product }: { product: Product }) {
+// Product detail modal (simple)
+function ProductDetailModal({ product, onClose }: { product: Product | null; onClose: () => void }) {
+  if (!product) return null;
   return (
-    <div className="group">
-      {/* Image placeholder */}
-      <div className="border rounded-md bg-gray-100 overflow-hidden">
-        <div className="aspect-square flex items-center justify-center text-gray-400">
-          {/* Later makkelijk vervangen door img */}
-          {/* <img src={product.imageUrl} alt={product.naam} className="w-full h-full object-cover" /> */}
-          IMAGE
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center">
+      <div className="bg-white rounded-md p-6 max-w-md w-full">
+        <h3 className="text-xl font-semibold mb-2">{product.naam}</h3>
+        <p className="text-sm text-gray-600">Prijs: € {product.prijs.toFixed(2)}</p>
+        <p className="text-sm text-gray-600">Allergeen: {product.allergeen_naam ?? 'Geen'}</p>
+        <div className="mt-4 flex justify-end">
+          <button onClick={onClose} className="px-4 py-2 rounded bg-gray-200">Close</button>
         </div>
       </div>
+    </div>
+  );
+}
 
-      {/* Info */}
+function ProductCard({ product, onAdd, onView, myAllergenen }: { product: Product; onAdd: () => void; onView?: () => void; myAllergenen: number[] }) {
+  const hasAllergeen = product.allergeen_id && myAllergenen.includes(product.allergeen_id);
+
+  return (
+    <div className="group border rounded-md p-4">
+      <div className="border rounded-md bg-gray-100 overflow-hidden">
+        <div className="aspect-square flex items-center justify-center text-gray-400">IMAGE</div>
+      </div>
+
       <div className="mt-4 flex items-start justify-between gap-3">
         <div>
           <h3 className="font-semibold text-gray-800 group-hover:underline">{product.naam}</h3>
-          <p className="text-sm text-gray-500">{product.categorie}</p>
+          <p className="text-sm text-gray-500">{product.allergeen_naam ?? ''}</p>
         </div>
 
         <div className="text-sm font-semibold text-gray-700">€ {product.prijs.toFixed(2)}</div>
       </div>
 
-      {/* Button row (UI-only) */}
-      <div className="mt-4 flex gap-3">
-        <button className="px-4 py-2 rounded-full border text-sm text-gray-700 hover:bg-gray-50">View</button>
-        <button
-          className="px-4 py-2 rounded-full bg-gray-200 text-sm text-gray-700 hover:bg-gray-300"
-          title="(later koppelen aan mandje)"
-        >
-          Add
-        </button>
+      <div className="mt-4 flex items-center gap-3">
+        <button onClick={onAdd} className="px-4 py-2 rounded-full bg-gray-200 text-sm text-gray-700 hover:bg-gray-300">Add</button>
+  <button onClick={onView} className="px-3 py-1 rounded-full border text-xs text-gray-600">View</button>
+        {hasAllergeen && <span className="ml-auto text-sm text-red-600 font-semibold">! Contains allergen</span>}
+      </div>
+   </div>
+  );
+}
+
+function CartSidebar({ products, cart, onAdd, onRemove, onUpdate, setCart, myAllergenen }: { products: Product[]; cart: Record<number, number>; onAdd: (id:number, add?:number)=>void; onRemove: (id:number)=>void; onUpdate: (id:number, qty:number)=>void; setCart: any; myAllergenen: number[] }) {
+  const items = Object.entries(cart).map(([pid, qty]) => {
+    const p = products.find((x) => x.id === Number(pid));
+    return p ? { ...p, qty: Number(qty) } : null;
+  }).filter(Boolean) as Array<Product & { qty: number }>;
+
+  const subtotal = items.reduce((s, it) => s + it.prijs * it.qty, 0);
+
+  const checkout = async () => {
+    if (items.length === 0) return alert('Cart is empty');
+
+    // build order payload: items with productId and qty
+    const payload = { items: items.map(i => ({ productId: i.id, qty: i.qty })) };
+    try {
+      const res = await axios.post(`${API_URL}/api/orders`, payload);
+      // If barcode image present, show modal with PNG (scanbaar). Otherwise fallback to text alert.
+      const img = res.data?.barcodeImage;
+      const barcodeText = res.data?.barcode;
+      if (img) {
+        setBarcodeImage(img);
+      } else if (barcodeText) {
+        alert(`Order confirmed. Barcode: ${barcodeText}`);
+      } else {
+        alert('Order confirmed.');
+      }
+      // clear cart
+      setCart({});
+    } catch (err: any) {
+      alert(err?.response?.data?.error ?? 'Order failed');
+    }
+  };
+
+  const [barcodeImage, setBarcodeImage] = useState<string | null>(null);
+
+  return (
+    <div className="border rounded-md p-4 bg-white">
+      <h3 className="font-semibold text-gray-800">Cart</h3>
+      {items.length === 0 ? (
+        <div className="mt-4 text-sm text-gray-500">No items yet.</div>
+      ) : (
+        <div className="mt-4 space-y-3">
+          {items.map((it) => (
+            <div key={it.id} className="flex items-center gap-3">
+              <div className="flex-1">
+                <div className="text-sm font-medium">{it.naam}</div>
+                <div className="text-xs text-gray-500">€ {it.prijs.toFixed(2)}</div>
+                {it.allergeen_id && myAllergenen.includes(it.allergeen_id) && (
+                  <div className="text-xs text-red-600 font-semibold">Warning: contains your allergen</div>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => onUpdate(it.id, Math.max(0, it.qty - 1))} className="px-2 py-1 border rounded">-</button>
+                <div className="w-8 text-center">{it.qty}</div>
+                <button onClick={() => onUpdate(it.id, it.qty + 1)} className="px-2 py-1 border rounded">+</button>
+              </div>
+            </div>
+          ))}
+
+          <div className="border-t pt-3">
+            <div className="flex justify-between text-sm text-gray-700"><span>Subtotal</span><span>€ {subtotal.toFixed(2)}</span></div>
+            <button onClick={checkout} className="mt-3 w-full px-4 py-2 rounded-full bg-gray-700 text-white">Confirm order (generate barcode)</button>
+          </div>
+        </div>
+      )}
+      {/* Show modal with scannable barcode image when available */}
+      <BarcodeModal image={barcodeImage} onClose={() => setBarcodeImage(null)} />
+    </div>
+  );
+}
+
+function BarcodeModal({ image, onClose }: { image: string | null; onClose: () => void }) {
+  if (!image) return null;
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-md p-6 max-w-xl w-full">
+        <h3 className="text-lg font-semibold mb-3">Your order barcode</h3>
+        <div className="flex flex-col items-center gap-4">
+          <img src={image} alt="Barcode" className="max-w-full h-auto" />
+          <div className="text-sm text-gray-600">Scan this barcode at collection</div>
+          <div className="flex gap-2 mt-4">
+            <a href={image} download="barcode.png" className="px-4 py-2 rounded bg-gray-200">Download PNG</a>
+            <button onClick={onClose} className="px-4 py-2 rounded bg-gray-700 text-white">Close</button>
+          </div>
+        </div>
       </div>
     </div>
   );
