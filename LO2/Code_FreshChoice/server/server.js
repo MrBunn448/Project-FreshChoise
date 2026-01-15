@@ -106,7 +106,13 @@ app.get("/api/allergenen", (req, res) => {
         return res.status(500).json({ error: 'Database fout.' });
       }
       // map to simple shape
-      res.json(rows.map(r => ({ id: r.id, naam: r.naam, prijs: Number(r.prijs), allergeen_id: r.allergeen_id, allergeen_naam: r.allergeen_naam })));
+      res.json(rows.map(r => ({ id: r.id, 
+                                naam: r.naam, 
+                                prijs: Number(r.prijs), 
+                                allergeen_id: r.allergeen_id, 
+                                allergeen_naam: r.allergeen_naam,
+                                imageUrl: `/src/assets/${r.naam}.png`
+                              })));
     });
   });
 

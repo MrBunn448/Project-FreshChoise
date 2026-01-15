@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import logo from "./assets/FreshChoiceLogo.png";
+import heromoodboard from "./assets/Moodboard.png";
 
 axios.defaults.withCredentials = true;
 
@@ -230,7 +231,7 @@ function Navbar(props: {
 
           {/* Center logo */}
           <div className="flex items-center justify-center">
-            <img src={logo} alt="Fresh Choice logo" className="h-9 w-auto object-contain" />
+            <img src={logo} alt="Fresh Choice logo" className="h-[56px] w-auto object-contain" />
           </div>
 
           {/* Right actions */}
@@ -255,6 +256,7 @@ function Navbar(props: {
                 {/* “Cart” icon placeholder */}
                 <button
                   className="w-10 h-10 rounded-full border flex items-center justify-center hover:bg-gray-50"
+                  onClick={onGoProducts}
                   title="Cart"
                   aria-label="Cart"
                 >
@@ -283,46 +285,45 @@ function HomePage(props: { isLoggedIn: boolean }) {
   const { isLoggedIn } = props;
 
   return (
-    <main className="mx-auto max-w-6xl px-4">
+    <main className="mx-auto max-w-2xl px-4">
       {/* HERO */}
       <section className="mt-6">
         <div className="relative border rounded-md overflow-hidden bg-gray-100">
           {/* Image placeholder - hier kan later een <img src="..." /> in */}
-          <div className="h-[360px] w-full flex items-center justify-center text-gray-400">
-            {/* Later: <img className="w-full h-full object-cover" src="..." alt="Hero" /> */}
-            HERO IMAGE PLACEHOLDER
-          </div>
+            <div className="h-[350px] w-full flex items-start justify-center text-gray-400">
+            <img className="w-full h-full object-cover object-top" src={heromoodboard} alt="Hero" />
+            </div>
 
-          {/* Search box (rechts boven in hero) */}
+          {/* Search box (rechts boven in hero)
           <div className="absolute top-6 right-6 w-80">
             <label className="block text-xs text-gray-500 mb-1">Search</label>
             <div className="flex items-center gap-2 bg-white border rounded-md px-3 py-2 shadow-sm">
               <input placeholder="Enter search terms" className="w-full outline-none text-sm" />
               <span className="text-gray-400">🔍</span>
             </div>
-          </div>
+          </div> */}
 
-          {/* CTA placeholder (midden onder) */}
+          {/* CTA placeholder (midden onder)
           <div className="absolute left-1/2 -translate-x-1/2 bottom-8">
             <button className="px-6 py-2 rounded-full bg-gray-200 text-gray-700 text-sm">
               Button label
             </button>
-          </div>
+          </div> */}
         </div>
       </section>
 
       {/* MID SECTION */}
       <section className="mt-12 text-center">
         <h2 className="text-3xl font-semibold text-gray-700">Welkom!</h2>
-        <p className="mt-3 text-gray-500 max-w-2xl mx-auto">Tekstje om de gebruiker te verwelkomen</p>
+        <p className="mt-3 text-gray-500 max-w-2xl mx-auto">Van harte welkom bij Fresh Choice</p>
       </section>
 
       {/* FEATURES */}
       <section className="mt-10">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
-          <FeatureCard icon="📍" title="Choose products" desc="Tekstje over het kiezen van producten." />
-          <FeatureCard icon="🗓️" title="Add them in your basket" desc="Tekstje over het toevoegen van producten aan je mandje." />
-          <FeatureCard icon="🚗" title="Easy to find, easy to collect" desc="Tekstje over het binnenkrijgen van je bestelling." />
+          <FeatureCard icon="📍" title="Choose products" desc="Op deze site kunt u de meest Fresh producten kiezen." />
+          <FeatureCard icon="🗓️" title="Add them in your basket" desc="Met uw bestelling kunt u een barcode maken." />
+          <FeatureCard icon="🚗" title="Easy to find, easy to collect" desc="Wacht op uw bezorging of kom gerust langs bij onze filialen." />
         </div>
       </section>
 
@@ -528,7 +529,9 @@ function ProductCard({ product, onAdd, onView, myAllergenen }: { product: Produc
   return (
     <div className="group border rounded-md p-4">
       <div className="border rounded-md bg-gray-100 overflow-hidden">
-        <div className="aspect-square flex items-center justify-center text-gray-400">IMAGE</div>
+        <div className="aspect-square flex items-center justify-center text-gray-400">
+          <img src={product.imageUrl || ''} alt={product.naam} className="w-full h-full object-cover" />
+        </div>
       </div>
 
       <div className="mt-4 flex items-start justify-between gap-3">
@@ -992,7 +995,7 @@ function AccountPage(props: {
 
           <section className="lg:col-span-9">
             <div className="border rounded-md bg-gray-100 p-8">
-              <h2 className="text-2xl font-semibold text-gray-800">Avatar</h2>
+              {/* <h2 className="text-2xl font-semibold text-gray-800">Avatar</h2>
 
               <div className="mt-6 flex items-center gap-6">
                 <div className="w-20 h-20 rounded-full bg-gray-300" />
@@ -1004,10 +1007,11 @@ function AccountPage(props: {
                     Remove
                   </button>
                 </div>
-              </div>
+              </div> */}
 
               {/* Profiel velden */}
-              <div className="mt-8 border-t border-gray-300 pt-6">
+              {/* <div className="mt-8 border-t border-gray-300 pt-6"> */}
+              <div>
                 <div className="max-w-2xl">
                   <label className="block text-sm text-gray-600 mb-2">User name</label>
                   <input
@@ -1121,19 +1125,19 @@ function Footer(props: { onGoHome: () => void }) {
             <button onClick={onGoHome} className="hover:text-gray-900">
               Home
             </button>
-            <button className="hover:text-gray-900">About Us</button>
-            <button className="hover:text-gray-900">Contact</button>
+            {/* <button className="hover:text-gray-900">About Us</button>
+            <button className="hover:text-gray-900">Contact</button> */}
           </div>
 
           <div className="flex items-center justify-center">
-            <img src={logo} alt="Fresh Choice logo" className="h-8 w-auto object-contain" />
+            <img src={logo} alt="Fresh Choice logo" className="h-[56px] w-auto object-contain" />
           </div>
 
-          <div className="flex items-center gap-6">
+          {/* <div className="flex items-center gap-6">
             <button className="hover:text-gray-900">Careers</button>
             <button className="hover:text-gray-900">Visit us</button>
             <button className="hover:text-gray-900">Blog</button>
-          </div>
+          </div> */}
         </div>
       </div>
     </footer>
