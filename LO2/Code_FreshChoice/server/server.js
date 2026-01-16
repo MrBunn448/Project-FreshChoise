@@ -1,0 +1,551 @@
+const express = require("express");
+const mysql = require("mysql2");
+const cors = require("cors");
+const bcrypt = require("bcrypt");
+
+const session = require("express-session");
+const MySQLSessionStore = require("express-mysql-session")(session);
+const bwipjs = require('bwip-js');
+
+const SALT_ROUNDS = 10;
+
+const app = express();
+app.use(express.json());
+
+// CORS moet credentials toestaan voor cookies
+app.use(
+  cors({
+    origin: "http://localhost:5173", // Vite
+    credentials: true,
+  })
+);
+
+// -----------------------------
+// MySQL CONNECTIE (POOL)
+// -----------------------------
+const db = mysql.createPool({
+  host: "localhost",
+  user: "root",
+  password: "",
+  database: "fresh_choice",
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+});
+
+db.getConnection((err, conn) => {
+  if (err) throw err;
+  console.log("MySQL connected");
+  conn.release();
+});
+
+// -----------------------------
+// SESSIONS (MySQL session store)
+// -----------------------------
+const sessionStore = new MySQLSessionStore({
+  host: "localhost",
+  user: "root",
+  password: "",
+  database: "fresh_choice",
+  clearExpired: true,
+  checkExpirationInterval: 15 * 60 * 1000,
+  expiration: 24 * 60 * 60 * 1000,
+});
+
+app.use(
+  session({
+    name: "freshchoice.sid",
+    secret: "change_this_secret_for_school_project", // later in .env
+    resave: false,
+    saveUninitialized: false,
+    store: sessionStore,
+    cookie: {
+      httpOnly: true,
+      secure: false, // lokaal op http
+      sameSite: "lax", // CSRF bescherming
+      maxAge: 24 * 60 * 60 * 1000,
+    },
+  })
+);
+
+// -----------------------------
+// AUTH MIDDLEWARE
+// -----------------------------
+function requireAuth(req, res, next) {
+  if (!req.session || !req.session.userId) {
+    return res.status(401).json({ error: "Niet ingelogd." });
+  }
+  next();
+}
+
+// -----------------------------
+// ALLERGENEN OPHALEN
+// -----------------------------
+app.get("/api/allergenen", (req, res) => {
+  const q = "SELECT id, naam FROM allergenen ORDER BY naam ASC";
+  db.query(q, (err, results) => {
+    if (err) {
+      console.error("DB error fetching allergenen:", err);
+      return res.status(500).json({ error: "Database fout." });
+    }
+    res.json(results);
+  });
+});
+
+  // -----------------------------
+  // PRODUCTEN (POC: only 3 products seeded)
+  // -----------------------------
+  app.get('/api/products', (req, res) => {
+    const q = `SELECT p.id, p.naam, p.prijs, p.allergeen_id, a.naam as allergeen_naam
+      FROM product p
+      LEFT JOIN allergenen a ON a.id = p.allergeen_id
+      ORDER BY p.id ASC`;
+    db.query(q, (err, rows) => {
+      if (err) {
+        console.error('DB error fetching products:', err);
+        return res.status(500).json({ error: 'Database fout.' });
+      }
+      // map to simple shape
+      res.json(rows.map(r => ({ id: r.id, 
+                                naam: r.naam, 
+                                prijs: Number(r.prijs), 
+                                allergeen_id: r.allergeen_id, 
+                                allergeen_naam: r.allergeen_naam,
+                                imageUrl: `/src/assets/${r.naam}.png`
+                              })));
+    });
+  });
+
+  app.get('/api/products/:id', (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' });
+    const q = `SELECT p.id, p.naam, p.prijs, p.allergeen_id, a.naam as allergeen_naam FROM product p LEFT JOIN allergenen a ON a.id = p.allergeen_id WHERE p.id = ? LIMIT 1`;
+    db.query(q, [id], (err, rows) => {
+      if (err) return res.status(500).json({ error: 'Database fout.' });
+      if (!rows || rows.length === 0) return res.status(404).json({ error: 'Product niet gevonden.' });
+      const r = rows[0];
+      res.json({ id: r.id, naam: r.naam, prijs: Number(r.prijs), allergeen_id: r.allergeen_id, allergeen_naam: r.allergeen_naam });
+    });
+  });
+
+  // -----------------------------
+  // ORDERS / BARCODE GENERATION (POC)
+  // - Accepts an order payload with up to 3 product types and quantity per product (0-99)
+  // - Generates a fixed 3-field barcode "XX YY ZZ" where positions are (brood, kaas, noten)
+  // -----------------------------
+  app.post('/api/orders', requireAuth, async (req, res) => {
+    // payload: { items: [{ productId, qty }] }
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+
+    // Map product ids to counts
+    const counts = { brood: 0, kaas: 0, noten: 0 };
+
+    // Allowed product names in DB: Brood, Kaas, Noten (case-insensitive)
+    const ids = items
+      .map(it => ({ productId: Number(it.productId), qty: Number(it.qty) }))
+      .filter(it => Number.isInteger(it.productId) && it.productId > 0 && Number.isInteger(it.qty) && it.qty >= 0 && it.qty <= 99);
+
+    if (ids.length === 0) return res.status(400).json({ error: 'Geen items in bestelling.' });
+
+    // Fetch product names for the provided ids using promise API so we can await bwip-js
+    try {
+      const placeholders = ids.map(() => '?').join(',') || 'NULL';
+      const q = `SELECT id, naam FROM product WHERE id IN (${placeholders})`;
+      const [rows] = await db.promise().query(q, ids.map(i => i.productId));
+
+      // Build name map
+      const nameMap = {};
+      for (const r of rows) nameMap[r.id] = String(r.naam).toLowerCase();
+
+      // Only allow the three allowed products
+      for (const it of ids) {
+        const name = nameMap[it.productId];
+        if (!name) return res.status(400).json({ error: 'Ongeldig product in bestelling.' });
+        if (name.includes('brood')) counts.brood += it.qty;
+        else if (name.includes('kaas')) counts.kaas += it.qty;
+        else if (name.includes('noten')) counts.noten += it.qty;
+        else return res.status(400).json({ error: 'Alleen brood, kaas en noten zijn toegestaan in POC.' });
+      }
+
+      // Enforce maximum 3 different products (here difference is whether qty>0 for each type)
+      const different = [counts.brood > 0, counts.kaas > 0, counts.noten > 0].filter(Boolean).length;
+      if (different > 3) return res.status(400).json({ error: 'Te veel verschillende producten.' });
+
+      // Cap per product to 99
+      counts.brood = Math.min(99, counts.brood);
+      counts.kaas = Math.min(99, counts.kaas);
+      counts.noten = Math.min(99, counts.noten);
+
+      // Format barcode as two-digit zero-padded numbers per spec: "BB KK NN" where order is brood, kaas, noten
+      const fmt = (n) => String(n).padStart(2, '0');
+      const barcode = `${fmt(counts.brood)} ${fmt(counts.kaas)} ${fmt(counts.noten)}`;
+
+      // Generate barcode image (Code128) as PNG (base64) using bwip-js
+      try {
+        // We encode the digits without spaces for scanner reliability, but set the
+        // human-readable text (alt text under the bars) to include the spaces.
+        const encoded = barcode.replace(/\s+/g, ''); // e.g. '010300'
+        const humanText = barcode; // e.g. '01 03 00'
+
+        const png = await bwipjs.toBuffer({
+          bcid:        'code128',       // Barcode type
+          text:        encoded,
+          scale:       3,               // 3x scaling
+          height:      10,              // bar height
+          includetext: true,            // show human-readable text
+          textxalign:  'center',
+          text: humanText, // ensure the visible text includes spaces
+        });
+
+        const base64 = png.toString('base64');
+        const dataUrl = `data:image/png;base64,${base64}`;
+
+        // Persist order to DB (store quantities and barcode). klient may be null.
+        try {
+          const klantId = req.session.userId || null;
+          const insertQ = `INSERT INTO orders (klant_id, brood_qty, kaas_qty, noten_qty, barcode) VALUES (?, ?, ?, ?, ?)`;
+          await db.promise().query(insertQ, [klantId, counts.brood, counts.kaas, counts.noten, barcode]);
+        } catch (err) {
+          console.error('Failed to persist order:', err);
+          // continue, barcode generation succeeded; we still return the image
+        }
+
+        return res.json({ barcode, counts, barcodeImage: dataUrl });
+      } catch (err) {
+        console.error('Barcode generation error:', err);
+        return res.status(500).json({ error: 'Barcode generation failed.', barcode, counts });
+      }
+    } catch (err) {
+      console.error('DB error fetching products for order:', err);
+      return res.status(500).json({ error: 'Database fout.' });
+    }
+  });
+
+// -----------------------------
+// HUIDIGE ALLERGENEN VAN INGELOGDE USER (ids)
+// -----------------------------
+app.get("/api/my-allergenen", requireAuth, async (req, res) => {
+  const userId = req.session.userId;
+
+  const q = `
+    SELECT a.id, a.naam
+    FROM klant_allergenen ka
+    JOIN allergenen a ON a.id = ka.allergeen_id
+    WHERE ka.klant_id = ?
+    ORDER BY a.naam ASC
+  `;
+
+  db.query(q, [userId], (err, rows) => {
+    if (err) {
+      console.error("DB error fetching my allergenen:", err);
+      return res.status(500).json({ error: "Database fout." });
+    }
+    // Alleen ids terugsturen is het makkelijkst voor checkboxes
+    res.json(rows.map((r) => r.id));
+  });
+});
+
+// -----------------------------
+// ALLERGENEN VAN INGELOGDE USER OPSLAAN
+// -----------------------------
+app.put("/api/my-allergenen", requireAuth, async (req, res) => {
+  const userId = req.session.userId;
+
+  const allergenenIds = Array.isArray(req.body?.allergenen)
+    ? req.body.allergenen
+        .map((x) => Number(x))
+        .filter((n) => Number.isInteger(n) && n > 0)
+    : [];
+
+  let conn;
+  try {
+    conn = await db.promise().getConnection();
+    await conn.beginTransaction();
+
+    // 1) verwijder oude records
+    await conn.query("DELETE FROM klant_allergenen WHERE klant_id = ?", [userId]);
+
+    // 2) als leeg → commit
+    if (allergenenIds.length === 0) {
+      await conn.commit();
+      conn.release();
+      return res.json({ message: "Allergenen opgeslagen.", allergenen: [] });
+    }
+
+    // 3) insert nieuwe records
+    const values = allergenenIds.map((aid) => [userId, aid]);
+    await conn.query(
+      "INSERT INTO klant_allergenen (klant_id, allergeen_id) VALUES ?",
+      [values]
+    );
+
+    await conn.commit();
+    conn.release();
+    return res.json({ message: "Allergenen opgeslagen.", allergenen: allergenenIds });
+  } catch (err) {
+    console.error("DB error saving my allergenen:", err);
+    try {
+      if (conn) {
+        await conn.rollback();
+        conn.release();
+      }
+    } catch {}
+    return res.status(500).json({ error: "Database fout bij opslaan allergenen." });
+  }
+});
+
+// -----------------------------
+// REGISTREREN optionele allergenen - POOL + TRANSACTION
+// -----------------------------
+app.post("/api/register", async (req, res) => {
+  let conn;
+
+  try {
+    let { naam, email, wachtwoord, adres, telefoonnummer, allergenen } = req.body;
+
+    if (!naam || !email || !wachtwoord) {
+      return res.status(400).json({
+        error: "Ontbrekende velden: naam, email en wachtwoord zijn vereist.",
+      });
+    }
+
+    naam = String(naam).trim();
+    email = String(email).trim().toLowerCase();
+    wachtwoord = String(wachtwoord);
+
+    adres = adres ? String(adres).trim() : null;
+    telefoonnummer = telefoonnummer ? String(telefoonnummer).trim() : null;
+
+    const allergenenIds = Array.isArray(allergenen)
+      ? allergenen.map((x) => Number(x)).filter((n) => Number.isInteger(n) && n > 0)
+      : [];
+
+    // pak een connection uit de pool
+    conn = await db.promise().getConnection();
+
+    // check email bestaat al
+    const [existing] = await conn.query(
+      "SELECT id FROM klant WHERE email = ? LIMIT 1",
+      [email]
+    );
+    if (existing.length > 0) {
+      conn.release();
+      return res.status(400).json({ error: "E-mail bestaat al." });
+    }
+
+    await conn.beginTransaction();
+
+    const hash = await bcrypt.hash(wachtwoord, SALT_ROUNDS);
+
+    // klant insert
+    const [klantRes] = await conn.query(
+      "INSERT INTO klant (naam, email, password_hash) VALUES (?, ?, ?)",
+      [naam, email, hash]
+    );
+    const klantId = klantRes.insertId;
+
+    // klantinformatie insert adres/telefoon (optioneel)
+    await conn.query(
+      "INSERT INTO klantinformatie (klant_id, adres, telefoonnummer) VALUES (?, ?, ?)",
+      [klantId, adres, telefoonnummer]
+    );
+
+    // allergenen insert (optioneel)
+    if (allergenenIds.length > 0) {
+      const values = allergenenIds.map((aid) => [klantId, aid]);
+      await conn.query(
+        "INSERT INTO klant_allergenen (klant_id, allergeen_id) VALUES ?",
+        [values]
+      );
+    }
+
+    await conn.commit();
+    conn.release();
+
+    return res.status(201).json({ message: "Account aangemaakt!", id: klantId });
+  } catch (err) {
+    console.error("Error in /api/register:", err);
+
+    try {
+      if (conn) {
+        await conn.rollback();
+        conn.release();
+      }
+    } catch (rollbackErr) {
+      console.error("Rollback error:", rollbackErr);
+    }
+
+    return res.status(500).json({ error: "Registreren mislukt." });
+  }
+});
+
+// -----------------------------
+// LOGIN (zet session userId)
+// -----------------------------
+app.post("/api/login", (req, res) => {
+  let { email, wachtwoord } = req.body;
+
+  email = String(email || "").trim().toLowerCase();
+  wachtwoord = String(wachtwoord || "");
+
+  if (!email || !wachtwoord) {
+    return res.status(400).json({ error: "Email en wachtwoord zijn vereist." });
+  }
+
+  const q = "SELECT * FROM klant WHERE email = ? LIMIT 1";
+  db.query(q, [email], async (err, results) => {
+    if (err) return res.status(500).json({ error: "Database fout." });
+    if (!results || results.length === 0)
+      return res.status(401).json({ error: "Email of wachtwoord klopt niet." });
+
+    const user = results[0];
+    const pwMatch = await bcrypt.compare(wachtwoord, user.password_hash);
+    if (!pwMatch)
+      return res.status(401).json({ error: "Email of wachtwoord klopt niet." });
+
+    // session opslaan
+    req.session.userId = user.id;
+
+    res.json({ id: user.id, naam: user.naam, email: user.email });
+  });
+});
+
+// -----------------------------
+// LOGOUT
+// -----------------------------
+app.post("/api/logout", (req, res) => {
+  req.session.destroy((err) => {
+    if (err) return res.status(500).json({ error: "Uitloggen mislukt." });
+
+    res.clearCookie("freshchoice.sid");
+    res.json({ message: "Uitgelogd." });
+  });
+});
+
+// -----------------------------
+// ME (frontend: check session)
+// -----------------------------
+app.get("/api/me", requireAuth, (req, res) => {
+  const userId = req.session.userId;
+  db.query(
+    "SELECT id, naam, email FROM klant WHERE id = ? LIMIT 1",
+    [userId],
+    (err, results) => {
+      if (err) return res.status(500).json({ error: "Database fout." });
+      if (!results || results.length === 0)
+        return res.status(404).json({ error: "User niet gevonden." });
+      res.json(results[0]);
+    }
+  );
+});
+
+// Public endpoint: get order by barcode (external system can call this)
+app.get('/api/orders/barcode/:code', async (req, res) => {
+  const code = String(req.params.code || '').trim();
+  if (!code) return res.status(400).json({ error: 'Barcode is required' });
+
+  try {
+    const q = `SELECT id, klant_id, brood_qty, kaas_qty, noten_qty, barcode, created_at FROM orders WHERE barcode = ? LIMIT 1`;
+    const [rows] = await db.promise().query(q, [code]);
+    if (!rows || rows.length === 0) return res.status(404).json({ error: 'Order not found' });
+    return res.json(rows[0]);
+  } catch (err) {
+    console.error('DB error fetching order by barcode:', err);
+    return res.status(500).json({ error: 'Database fout.' });
+  }
+});
+
+// -----------------------------
+// PROFIEL OPHALEN (naam/email/adres/telefoon) via session
+// -----------------------------
+app.get("/api/profile", requireAuth, (req, res) => {
+  const userId = req.session.userId;
+
+  const q = `
+    SELECT k.id, k.naam, k.email, ki.adres, ki.telefoonnummer
+    FROM klant k
+    LEFT JOIN klantinformatie ki ON ki.klant_id = k.id
+    WHERE k.id = ?
+    LIMIT 1
+  `;
+
+  db.query(q, [userId], (err, results) => {
+    if (err) return res.status(500).json({ error: "Database fout." });
+    if (!results || results.length === 0)
+      return res.status(404).json({ error: "User niet gevonden." });
+    res.json(results[0]);
+  });
+});
+
+// -----------------------------
+// PROFIEL OPSLAAN (naam/e-mail/adres/telefoon) via session
+// -----------------------------
+app.put("/api/profile", requireAuth, async (req, res) => {
+  const userId = req.session.userId;
+
+  let { naam, email, adres, telefoonnummer } = req.body;
+
+  naam = naam ? String(naam).trim() : null;
+  email = email ? String(email).trim().toLowerCase() : null;
+  adres = adres ? String(adres).trim() : null;
+  telefoonnummer = telefoonnummer ? String(telefoonnummer).trim() : null;
+
+  if (!naam || !email) {
+    return res.status(400).json({ error: "Naam en email zijn verplicht." });
+  }
+
+  let conn;
+  try {
+    conn = await db.promise().getConnection();
+    await conn.beginTransaction();
+
+    // Check of email al bestaat bij een andere klant
+    const [emailRows] = await conn.query(
+      "SELECT id FROM klant WHERE email = ? AND id <> ? LIMIT 1",
+      [email, userId]
+    );
+    if (emailRows.length > 0) {
+      await conn.rollback();
+      conn.release();
+      return res.status(400).json({ error: "E-mail bestaat al." });
+    }
+
+    // Update klant
+    await conn.query("UPDATE klant SET naam = ?, email = ? WHERE id = ?", [
+      naam,
+      email,
+      userId,
+    ]);
+
+    // Upsert klantinformatie
+    await conn.query(
+      `
+      INSERT INTO klantinformatie (klant_id, adres, telefoonnummer)
+      VALUES (?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        adres = VALUES(adres),
+        telefoonnummer = VALUES(telefoonnummer)
+      `,
+      [userId, adres, telefoonnummer]
+    );
+
+    await conn.commit();
+    conn.release();
+
+    return res.json({ message: "Profiel opgeslagen.", naam, email });
+  } catch (err) {
+    console.error("DB error saving profile:", err);
+    try {
+      if (conn) {
+        await conn.rollback();
+        conn.release();
+      }
+    } catch {}
+    return res.status(500).json({ error: "Database fout bij opslaan profiel." });
+  }
+});
+
+// -----------------------------
+// SERVER STARTEN
+// -----------------------------
+app.listen(3001, () => console.log("Server draait op http://localhost:3001"));
